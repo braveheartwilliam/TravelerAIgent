@@ -1,0 +1,19 @@
+Here is the specific objectives and general information which should be kept in Cascade ("Agent") memory at all times to guide each Agent action.
+
+#Overarching Objective:   
+- Convert an app from a React framework to a Svelte5/Sveltekit2 framework.
+- leverage advanced technologies to provide the most complete, industry-leading user experience and unmatched functionality in planning, monitoring, and maintaining personal travel requirements and plans AND capturing and recalling travel memories (visual, textual) created during user travels;
+
+#Critical strategies:
+- the app to convert (referred to by "React app")is in the workspace within folder "TravelSphere";
+- the new app codebase (referred to by "Svelte app") will be placed in the folder "TravelAIgent-Svelte";
+- the the Svelte app will adhere to the latest Svelte 5 and Sveltekit 2 best practices as documented on the  web site "https://svelte.dev/docs/llms";
+- the Svelte app will adhere to Typescript conventions, rules and best practices;
+- the Svelte app will use "better-auth" for authentication and authorization;
+- the Svelte app will use zod for validation and consistency of data;
+- the Svelte app will use Drizzle for middleware between functionality and Postgress database providing a more logical view of the apps data store;
+- the Svelte app will use Superform for complex form-based user interactions;
+- the UI structure and presentation, application navigation, features and functions and codebase from the React app should be converted to the Svelte app to the extent possible recognizing that there is some parts of the app that the Agent can't convert and will require custom coding by me or with help from the Agent;
+- assessment and key conversion decisions developed by Agent are found in the document in "Documentation/Svelte Conversion/Svelte Conversion Cascade Assessment.md" within the folder "TravelAIgent-Svelte" in this workspace;
+- conversion steps developed by Agent are found in the document in "Documentation/Svelte Conversion/Conversion Implementation Steps.md" within the folder "TravelAIgent-Svelte" in this workspace.
+- in the "Documentation" folder, and sub-folder "ImplementationDocs", agent will maintain a markdown file that documents, briefly, the purpose and objectives of each folder and file in the "TravelAIgent-Svelte" folder and maintain the file as the codebase changes.

@@ -117,7 +117,7 @@ Implementation Strategy:
 
 ### 3. Authentication Implementation
 
-**DECIDED:** Auth.js (formerly NextAuth)
+**DECIDED:** 3. better-auth
 
 Comparison of Options:
 
@@ -146,25 +146,14 @@ Comparison of Options:
    - Less battle-tested
    - Limited features
 
-Implementation Strategy with Auth.js:
-1. Install Auth.js and SvelteKit adapter
-2. Migrate existing user authentication logic
-3. Implement session handling using Auth.js
-4. Set up protected route guards
-5. Integrate with existing user data/database
-
-Migration Benefits:
-- Improved security out of the box
-- Better integration with SvelteKit routing
-- Reduced maintenance burden
-- Future-proof for additional auth features
 
 ### 4. Routing and Data Loading
 
 Three key decisions to make:
 
 1. **Route Structure Strategy**
-Options:
+
+**DECIDED:** a) File-based routing with +page.svelte
 
 a) File-based routing with +page.svelte:
    - Pros:
@@ -209,9 +198,12 @@ b) Pure TanStack Query:
      - Manual SSR setup needed
 
 3. **Protected Routes Implementation**
+
+**DECIDED:** a) better-auth + SvelteKit hooks
+
 Options:
 
-a) Auth.js + SvelteKit hooks:
+a) better-auth + SvelteKit hooks:
    - Pros:
      - Tight integration with chosen auth solution
      - Server-side protection
@@ -233,18 +225,20 @@ b) Custom middleware approach:
 2. Implement hybrid data loading:
    - SvelteKit load functions for initial data and SEO
    - TanStack Query for dynamic data and mutations
-3. Use Auth.js + SvelteKit hooks for protection
+3. Use better-auth + SvelteKit hooks for protection
 
 Implementation Strategy:
 1. Set up file-based route structure
 2. Create load functions for critical initial data
 3. Migrate React Query to TanStack Query
-4. Implement Auth.js route protection
+4. Implement better-auth + SvelteKit route protection
 5. Gradually migrate Express routes to SvelteKit
 
 ### 5. Development Tooling
 
 1. **Testing Framework**
+
+**DECIDED:**  Use both
 Options:
 
 a) Vitest:

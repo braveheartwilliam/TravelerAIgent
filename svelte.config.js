@@ -1,18 +1,36 @@
 import adapter from '@sveltejs/adapter-auto';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import path from 'path';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
-	// Consult https://svelte.dev/docs/kit/integrations
-	// for more information about preprocessors
-	preprocess: vitePreprocess(),
-
-	kit: {
-		// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-		adapter: adapter()
-	}
+  // Svelte 5 features
+  compilerOptions: {
+    enableSourcemap: true,
+  },
+  
+  // Path aliases
+  kit: {
+    adapter: adapter(),
+    alias: {
+      $lib: path.resolve('./src/lib'),
+      '$lib/*': path.resolve('./src/lib/*'),
+      '$components/*': path.resolve('./src/lib/components/*'),
+      '$utils/*': path.resolve('./src/lib/utils/*'),
+      '$app/*': path.resolve('./.svelte-kit/types/src/app.d.ts'),
+      '$env/*': path.resolve('./.svelte-kit/ambient.d.ts')
+    }
+  },
+  
+  // Preprocess with Vite
+  preprocess: [
+    vitePreprocess({
+      // TypeScript configuration
+      typescript: {
+        tsconfig: './tsconfig.json',
+      },
+    })
+  ]
 };
 
 export default config;

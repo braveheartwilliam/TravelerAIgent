@@ -1,0 +1,259 @@
+import { SvelteKitAuth } from '@auth/sveltekit';
+import GitHub from '@auth/core/providers/github';
+import Google from '@auth/core/providers/google';
+import Discord from '@auth/core/providers/discord';
+import type { Account, Profile, User } from '@auth/core/types';
+import { sequence } from '@sveltejs/kit/hooks';
+import type { Handle } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
+
+// Type definitions for Auth.js events
+type SignInEvent = {
+  user: User;
+  account?: Account | null;
+  profile?: Profile;
+  isNewUser?: boolean;
+};
+
+type CreateUserEvent = {
+  user: User;
+};
+
+type LinkAccountEvent = {
+  user: User;
+  account: Account;
+};
+
+// Base URL configuration
+const port = env['PORT'] || '65477';
+const baseUrl = env['AUTH_URL'] || `http://localhost:${port}`.replace(/\/+$/, '');
+const cleanBaseUrl = baseUrl;
+
+// Debug environment variables
+console.log('Environment:', {
+  NODE_ENV: env['NODE_ENV'],
+  AUTH_URL: env['AUTH_URL'],
+  GITHUB_ID: env['GITHUB_ID'] ? '***' : 'not set',
+  GOOGLE_ID: env['GOOGLE_ID'] ? '***' : 'not set',
+  DISCORD_ID: env['DISCORD_ID'] ? '***' : 'not set',
+  baseUrl,
+  cleanBaseUrl
+});
+
+// Verify required environment variables
+const requiredEnvVars = [
+  'AUTH_SECRET',
+  'AUTH_URL',
+  'GITHUB_ID',
+  'GITHUB_SECRET',
+  'GOOGLE_ID',
+  'GOOGLE_SECRET',
+  'DISCORD_ID',
+  'DISCORD_SECRET'
+] as const;
+
+const missingVars = requiredEnvVars.filter(varName => !env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missingVars.forEach(varName => console.error(`  - ${varName}`));
+  if (env['NODE_ENV'] === 'production') {
+    throw new Error('Missing required environment variables');
+  }
+}
+
+// Debug logging
+console.log('🔐 Auth Configuration:', {
+  NODE_ENV: env['NODE_ENV'],
+  AUTH_URL: cleanBaseUrl,
+  AUTH_SECRET: env['AUTH_SECRET'] ? '✅ Set' : '❌ Not set',
+  GITHUB_ID: env['GITHUB_ID'] ? '✅ Set' : '❌ Not set',
+  GITHUB_SECRET: env['GITHUB_SECRET'] ? '✅ Set' : '❌ Not set',
+  AUTH_TRUST_HOST: env['AUTH_TRUST_HOST'] || 'false'
+});
+
+// Extend the Auth.js types
+declare module '@auth/core/types' {
+  interface User {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    emailVerified?: Date | null;
+    image?: string | null;
+    role?: string;
+  }
+
+  interface Session {
+    user?: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      emailVerified?: Date | null;
+      image?: string | null;
+      role?: string;
+    } | null;
+  }
+}
+
+declare module '@auth/core/adapters' {
+  interface AdapterUser extends User {
+    emailVerified: Date | null;
+  }
+}
+
+declare module '@auth/core/jwt' {
+  interface JWT {
+    id: string;
+    role?: string;
+  }
+}
+
+// Auth configuration
+const { handle: authHandle } = SvelteKitAuth({
+  providers: [
+    GitHub({
+      clientId: env['GITHUB_ID'] || '',
+      clientSecret: env['GITHUB_SECRET'] || ''
+    }),
+    Google({
+      clientId: env['GOOGLE_ID'] || '',
+      clientSecret: env['GOOGLE_SECRET'] || '',
+      authorization: {
+        params: {
+          prompt: 'consent',
+          access_type: 'offline',
+          response_type: 'code',
+        },
+      },
+    }),
+    Discord({
+      clientId: env['DISCORD_ID'] || '',
+      clientSecret: env['DISCORD_SECRET'] || ''
+    })
+  ],
+  secret: env['AUTH_SECRET'] || 'your-secret-key',
+  trustHost: env['AUTH_TRUST_HOST'] === 'true',
+  debug: env['NODE_ENV'] !== 'production',
+  basePath: '/api/auth',
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
+  },
+  pages: {
+    signIn: '/auth/signin',
+    error: '/auth/error',
+    signOut: '/',
+    verifyRequest: '/auth/verify-request',
+    newUser: '/auth/new-user'
+  },
+  callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Allows relative callback URLs
+      if (url.startsWith('/')) {
+        // Don't allow redirects to auth pages to prevent loops
+        if (url.startsWith('/auth/')) {
+          console.warn('Prevented redirect to auth page:', url);
+          return `${baseUrl}/app`;
+        }
+        return `${baseUrl}${url}`;
+      }
+      // Allows callback URLs on the same origin
+      else if (new URL(url).origin === baseUrl) {
+        return url;
+      }
+      return baseUrl + '/app';
+    },
+    
+    async session({ session, token }) {
+      // Create a base user object with default values
+      const userFromSession = session.user || {};
+      const baseUser = {
+        id: userFromSession.id || '',
+        role: userFromSession.role || 'user',
+        name: userFromSession.name || null,
+        email: userFromSession.email || null,
+        emailVerified: userFromSession.emailVerified || null,
+        image: userFromSession.image || null
+      };
+      
+      // Update with token data if available
+      if (token?.sub) {
+        baseUser.id = token.sub;
+        if (token.role) {
+          baseUser.role = token.role as string;
+        }
+      }
+      
+      // Ensure we always have at least an empty string for id
+      if (!baseUser.id) {
+        baseUser.id = '';
+      }
+      
+      // Create a new session object with the updated user
+      const updatedSession = {
+        ...session,
+        user: {
+          id: baseUser.id,
+          name: baseUser.name || null,
+          email: baseUser.email || null,
+          emailVerified: baseUser.emailVerified || null,
+          image: baseUser.image || null,
+          role: baseUser.role
+        }
+      };
+      
+      return updatedSession;
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.sub = user.id;
+        token.role = user.role || 'user';
+      }
+      return token;
+    }
+  },
+  events: {
+    signIn: async (message: SignInEvent) => {
+      console.log('🔑 User signed in:', {
+        email: message.user?.email,
+        name: message.user?.name,
+        isNewUser: message.isNewUser,
+        account: message.account?.provider
+      });
+    },
+    signOut: async () => {
+      console.log('👋 User signed out');
+    },
+    createUser: async (message: CreateUserEvent) => {
+      console.log('👤 New user created:', {
+        id: message.user.id,
+        email: message.user.email,
+        name: message.user.name
+      });
+    },
+    linkAccount: async (message: LinkAccountEvent) => {
+      console.log('🔗 Account linked:', {
+        provider: message.account.provider,
+        providerAccountId: message.account.providerAccountId,
+        userId: message.user.id
+      });
+    }
+  },
+  cookies: {
+    sessionToken: {
+      name: '__Secure-authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: env['NODE_ENV'] === 'production',
+        domain: env['NODE_ENV'] === 'production' ? new URL(baseUrl).hostname : 'localhost',
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+      },
+    },
+  },
+});
+
+// Export the handle function for SvelteKit
+export const handle: Handle = sequence(authHandle);

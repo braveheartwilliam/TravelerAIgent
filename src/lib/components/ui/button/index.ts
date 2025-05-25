@@ -19,6 +19,7 @@ const buttonVariants = tv({
 			sm: "h-9 rounded-md px-3",
 			lg: "h-11 rounded-md px-8",
 			icon: "h-10 w-10",
+			xs: "h-6 rounded-md px-1.5 text-xs",
 		},
 	},
 	defaultVariants: {
@@ -33,6 +34,7 @@ type Size = VariantProps<typeof buttonVariants>["size"];
 type Props = ButtonPrimitive.Props & {
 	variant?: Variant;
 	size?: Size;
+	use?: any[];
 };
 
 type Events = ButtonPrimitive.Events;

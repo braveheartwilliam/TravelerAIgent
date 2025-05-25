@@ -1,0 +1,67 @@
+CREATE TABLE "public"."accounts" (
+    "id" text NOT NULL,
+    "user_id" int4 NOT NULL,
+    "type" text NOT NULL,
+    "provider" text NOT NULL,
+    "provider_account_id" text NOT NULL,
+    "refresh_token" text,
+    "access_token" text,
+    "expires_at" int4,
+    "token_type" text,
+    "scope" text,
+    "id_token" text,
+    "session_state" text,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    "updated_at" timestamp NOT NULL DEFAULT now(),
+    CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE,
+    PRIMARY KEY ("id")
+);
+CREATE TABLE "public"."sessions" (
+    "id" text NOT NULL,
+    "user_id" int4 NOT NULL,
+    "expires_at" timestamptz NOT NULL,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE,
+    PRIMARY KEY ("id")
+);
+-- Sequence and defined type
+CREATE SEQUENCE IF NOT EXISTS users_id_seq;
+DROP TYPE IF EXISTS "public"."user_role";
+CREATE TYPE "public"."user_role" AS ENUM ('user', 'admin');
+
+-- Table Definition
+CREATE TABLE "public"."users" (
+    "id" int4 NOT NULL DEFAULT nextval('users_id_seq'::regclass),
+    "userName" text NOT NULL,
+    "email" text NOT NULL,
+    "password" text,
+    "fullName" text,
+    "profile_picture" text,
+    "phone" text,
+    "street" text,
+    "apt" text,
+    "city" text,
+    "state" text,
+    "postal_code" text,
+    "country" text,
+    "address_coords" jsonb,
+    "email_verified" timestamp,
+    "verification_token" text,
+    "reset_token" text,
+    "reset_token_expires" timestamp,
+    "github_id" text,
+    "role" "public"."user_role" NOT NULL DEFAULT 'user'::user_role,
+    "is_active" bool NOT NULL DEFAULT true,
+    "last_login" timestamp,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    "updated_at" timestamp NOT NULL DEFAULT now(),
+    "reset_password_token" text,
+    "reset_password_expires" timestamp,
+    PRIMARY KEY ("id")
+);
+
+
+-- Indices
+CREATE UNIQUE INDEX users_username_unique ON public.users USING btree ("userName");
+CREATE UNIQUE INDEX users_email_unique ON public.users USING btree (email);
+CREATE UNIQUE INDEX users_github_id_unique ON public.users USING btree (github_id);

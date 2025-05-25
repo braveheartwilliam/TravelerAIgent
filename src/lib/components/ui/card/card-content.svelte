@@ -1,13 +1,17 @@
 <script lang="ts">
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn } from "$lib/utils.js";
+  import { cn } from "$lib/utils.js";
 
-	type $$Props = HTMLAttributes<HTMLDivElement>;
-
-	let className: $$Props["class"] = undefined;
-	export { className as class };
+  const { 
+    class: className = "", 
+    children = () => ({}),
+    ...restProps 
+  } = $props<{ 
+    class?: string;
+    children?: () => any;
+    [key: string]: any; 
+  }>();
 </script>
 
-<div class={cn("p-6", className)} {...$$restProps}>
-	<slot />
+<div class={cn("p-6", className)} {...restProps}>
+	{@render children()}
 </div>

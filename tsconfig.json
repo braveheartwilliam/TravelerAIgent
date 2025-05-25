@@ -1,19 +1,68 @@
 {
-	"extends": "./.svelte-kit/tsconfig.json",
-	"compilerOptions": {
-		"allowJs": true,
-		"checkJs": true,
-		"esModuleInterop": true,
-		"forceConsistentCasingInFileNames": true,
-		"resolveJsonModule": true,
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"strict": true,
-		"moduleResolution": "bundler"
-	}
-	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
-	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
-	//
-	// If you want to overwrite includes/excludes, make sure to copy over the relevant includes/excludes
-	// from the referenced tsconfig.json - TypeScript does not merge them in
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    /* Base Options */
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    "noEmitOnError": true,
+    "noErrorTruncation": true,
+    "preserveWatchOutput": true,
+    "skipDefaultLibCheck": true,
+    "useDefineForClassFields": true,
+
+    /* Strict Type-Checking */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": false,
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    
+    /* JSX */
+    "jsx": "preserve",
+    "jsxImportSource": "svelte",
+    "jsxFactory": "svelte.createElement",
+    "jsxFragmentFactory": "svelte.Fragment",
+    
+    /* Type Definitions */
+    "types": ["svelte", "@sveltejs/kit"],
+    "typeRoots": ["./node_modules/@types", "./src/types", "./src"]
+  },
+  
+  /* Include/Exclude */
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "src/svelte-jsx.d.ts"
+  ],
+  "exclude": [
+    "node_modules/*",
+    "**/node_modules/*",
+    "**/.svelte-kit/*",
+    "**/build/*",
+    "**/dist/*",
+    "**/.*",
+    "**/.*/**",
+    "**/build",
+    "**/dist"
+  ]
 }

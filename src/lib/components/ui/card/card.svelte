@@ -1,16 +1,17 @@
 <script lang="ts">
-	import type { HTMLAttributes } from "svelte/elements";
-	import { cn } from "$lib/utils.js";
-
-	type $$Props = HTMLAttributes<HTMLDivElement>;
-
-	let className: $$Props["class"] = undefined;
-	export { className as class };
+  import { cn } from "$lib/utils.js";
+  
+  // Using $props() for component props in Svelte 5
+  const { class: className, children = () => ({}), ...restProps } = $props<{
+    class?: string;
+    children?: () => any;
+    [key: string]: any;
+  }>();
 </script>
 
 <div
-	class={cn("bg-card text-card-foreground rounded-lg border shadow-sm", className)}
-	{...$$restProps}
+  class={cn("bg-card text-card-foreground rounded-lg border shadow-sm", className)}
+  {...restProps}
 >
-	<slot />
+  {@render children()}
 </div>

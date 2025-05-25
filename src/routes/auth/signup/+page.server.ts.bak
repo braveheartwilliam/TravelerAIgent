@@ -1,0 +1,462 @@
+import { fail, redirect, type Actions } from '@sveltejs/kit';
+import { superValidate } from 'sveltekit-superforms/server';
+import { zod } from 'sveltekit-superforms/adapters';
+import { signupSchema } from '$lib/schemas/auth';
+import { db } from '$lib/server/db';
+import { sql } from 'drizzle-orm';
+import { randomBytes, createHash } from 'crypto';
+import type { PageServerLoad } from './$types';
+
+// Type for user data from the signup form
+type UserData = {
+  userName: string;
+  email: string;
+  fullName?: string;
+  password: string;
+  confirmPassword: string;
+};
+
+// Enhanced debug logging utility
+function debugLog(message: string, data?: unknown): void {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] [Signup] ${message}`;
+  
+  // Log to console with more details
+  console.log('\n=== DEBUG LOG ===');
+  console.log(`[${timestamp}] [Signup] ${message}`);
+  
+  if (data) {
+    try {
+      console.log('Data:', JSON.stringify(data, (key, value) => 
+        typeof value === 'bigint' ? value.toString() : value, 2));
+    } catch (e) {
+      console.log('Data (could not stringify):', data);
+    }
+  }
+  console.log('================\n');
+}
+
+// Password hashing utilities
+function generateSalt(): string {
+  return randomBytes(16).toString('hex');
+}
+
+function hashPassword(password: string, salt: string): string {
+  return createHash('sha256')
+    .update(password + salt)
+    .digest('hex');
+}
+
+// Session management
+function generateSessionId(): string {
+  return randomBytes(32).toString('hex');
+}
+
+function getSessionExpiration(): Date {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+  return expiresAt;
+}
+
+// Server-side load function
+export const load: PageServerLoad = async ({ locals }) => {
+  if (locals.user) {
+    throw redirect(303, '/dashboard');
+  }
+  
+  // Initialize form with default values
+  const form = await superValidate(zod(signupSchema));
+  return { form };
+};
+
+// Main signup handler
+export const actions: Actions = {
+  default: async ({ request, cookies }) => {
+    debugLog('=== SIGNUP HANDLER STARTED ===');
+    let userId: number | null | undefined = null;
+    
+    try {
+      // Log environment and request info
+      debugLog('Environment info', {
+        NODE_ENV: process.env['NODE_ENV'],
+        NODE_ENV_TYPE: typeof process.env['NODE_ENV'],
+        HAS_DATABASE_URL: !!process.env['DATABASE_URL'],
+        HAS_BETTER_AUTH_URL: !!process.env['BETTER_AUTH_URL'],
+        COOKIES: Object.keys(cookies.getAll())
+      });
+      
+      // Log database connection info (without exposing credentials)
+      if (process.env['DATABASE_URL']) {
+        const dbUrl = new URL(process.env['DATABASE_URL']);
+        debugLog('Database connection', {
+          protocol: dbUrl.protocol,
+          host: dbUrl.hostname,
+          port: dbUrl.port,
+          database: dbUrl.pathname,
+          hasUsername: !!dbUrl.username,
+          hasPassword: !!dbUrl.password
+        });
+      }
+
+      // Log request info
+      const requestBody = await request.clone().text();
+      debugLog('Request info', {
+        method: request.method,
+        url: request.url,
+        headers: Object.fromEntries(request.headers.entries()),
+        body: requestBody
+      });
+
+      // Validate form data
+      debugLog('Starting form validation');
+      const form = await superValidate(request, zod(signupSchema));
+      
+      debugLog('Form data received', {
+        valid: form.valid,
+        data: form.data,
+        errors: form.errors
+      });
+      
+      if (!form.valid) {
+        debugLog('Form validation failed', {
+          errors: form.errors,
+          formData: form.data
+        });
+        return fail(400, { 
+          form,
+          message: 'Validation failed',
+          error: 'Please check the form for errors',
+          fieldErrors: form.errors
+        });
+      }
+      
+      const { email, userName, fullName, password } = form.data as UserData;
+      debugLog('Processing signup', { 
+        email, 
+        userName, 
+        hasFullName: !!fullName,
+        hasPassword: !!password 
+      });
+      
+      // Check if user already exists
+      debugLog('Checking for existing user', { email, userName });
+      type UserRow = { id: number };
+      type QueryResult = { rows: UserRow[] } | UserRow[];
+      
+      let existingUsers: UserRow[] = [];
+      
+      try {
+        const result = await db.execute(
+          sql`SELECT id FROM users WHERE email = ${email} OR "userName" = ${userName} LIMIT 1`
+        ) as QueryResult;
+        
+        // Handle different possible return types from db.execute
+        if (Array.isArray(result)) {
+          existingUsers = result as UserRow[];
+        } else if (result && 'rows' in result) {
+          existingUsers = result.rows as UserRow[];
+        }
+        
+        debugLog('Existing user check complete', { 
+          resultType: result ? typeof result : 'null',
+          hasRows: existingUsers.length > 0,
+          rowCount: existingUsers.length,
+          firstRow: existingUsers[0]
+        });
+      } catch (dbError) {
+        const error = dbError as Error;
+        debugLog('Error checking for existing user', { 
+          error: {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          }
+        });
+        throw new Error(`Database error while checking for existing user: ${error.message}`);
+      }
+      
+      if (existingUsers.length > 0) {
+        debugLog('User already exists', { email, userName });
+        return fail(400, {
+          form,
+          message: 'User already exists',
+          error: 'A user with this email or username already exists.'
+        });
+      }
+      
+      // Hash password
+      debugLog('Hashing password');
+      const salt = generateSalt();
+      const passwordHash = hashPassword(password, salt);
+      
+      // Create user in database
+      debugLog('Creating user in database', { email, userName });
+      
+      interface UserInsertResult {
+        id: number;
+      }
+      
+      // Insert user directly without transaction for now
+      const insertResult = await db.execute<UserInsertResult>(
+        sql`
+          INSERT INTO users ("userName", email, "fullName", password, salt, role, is_active, created_at, updated_at)
+          VALUES (
+            ${userName},
+            ${email},
+            ${fullName || null},
+            ${passwordHash},
+            ${salt},
+            'user',
+            true,
+            NOW(),
+            NOW()
+          )
+          RETURNING id
+        `
+      );
+      
+      // Handle different response formats
+      let userId: number | undefined;
+      
+      if (Array.isArray(insertResult) && insertResult.length > 0) {
+        userId = (insertResult[0] as UserInsertResult)?.id;
+      } else if (insertResult && 'rows' in insertResult && Array.isArray(insertResult.rows)) {
+        userId = (insertResult.rows[0] as UserInsertResult)?.id;
+      } else if (insertResult && 'id' in (insertResult as UserInsertResult)) {
+        userId = (insertResult as UserInsertResult).id;
+      }
+      
+      debugLog('User creation result', { userId, insertResult });
+      
+      if (!userId) {
+        throw new Error('Failed to create user: No valid user ID returned');
+      }
+          throw new Error('Failed to create user: No ID returned from database');
+        }
+        
+        userId = newUser.id;
+        
+        debugLog('User created successfully', { userId });
+      } catch (createError) {
+        debugLog('Error creating user', { 
+          error: createError,
+          errorMessage: createError instanceof Error ? createError.message : 'Unknown error',
+          errorStack: createError instanceof Error ? createError.stack : undefined
+        });
+        throw createError;
+      }
+      
+      // Create session
+      debugLog('Creating session for user', { userId });
+      type SessionRow = { id: string };
+      type SessionResult = { rows: SessionRow[] } | SessionRow[];
+      
+      try {
+        const sessionToken = generateSessionId();
+        const expiresAt = getSessionExpiration();
+        
+        debugLog('Session details', {
+          sessionToken: sessionToken ? '***' : 'MISSING',
+          expiresAt: expiresAt.toISOString()
+        });
+        
+        // Insert session into database
+        debugLog('Inserting session into database', { 
+          userId,
+          sessionToken: sessionToken ? '***' : 'MISSING',
+          expiresAt: expiresAt.toISOString()
+        });
+        
+        // Verify the sessions table structure
+        try {
+          // Log the table structure for debugging
+          await db.execute(sql`
+            SELECT 1 FROM sessions LIMIT 1
+          `);
+          
+          debugLog('Sessions table exists and is accessible');
+          
+          // Log the columns for debugging
+          const columns = await db.execute<{
+            column_name: string;
+            data_type: string;
+            is_nullable: string;
+          }>(sql`
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns 
+            WHERE table_name = 'sessions';
+          `);
+          
+          debugLog('Sessions table columns', { 
+            columns: Array.isArray(columns) ? columns : 'Not an array',
+            expectedColumns: ['id', 'user_id', 'expires_at', 'created_at', 'session_token']
+          });
+          
+        } catch (tableError) {
+          debugLog('Error checking sessions table', { 
+            error: tableError instanceof Error ? tableError.message : 'Unknown error',
+            errorDetails: tableError
+          });
+          throw new Error(`Failed to verify sessions table: ${tableError instanceof Error ? tableError.message : 'Unknown error'}`);
+        }
+        
+        // Insert the session with all required fields
+        const sessionResult = await db.execute(
+          sql`
+            INSERT INTO sessions (id, user_id, session_token, expires_at, created_at)
+            VALUES (
+              ${sessionToken},
+              ${userId},
+              ${sessionToken},
+              ${expiresAt.toISOString()},
+              NOW()
+            )
+            RETURNING id, user_id, expires_at, created_at
+          `
+        ) as SessionResult;
+        
+        // Handle different possible return types from db.execute
+        let sessionId: string | undefined;
+        
+        if (Array.isArray(sessionResult) && sessionResult.length > 0) {
+          // Handle array result
+          const firstItem = sessionResult[0];
+          if (firstItem && typeof firstItem === 'object' && 'id' in firstItem) {
+            sessionId = String(firstItem.id);
+          }
+        } else if (sessionResult && 'rows' in sessionResult && 
+                  Array.isArray(sessionResult.rows) && 
+                  sessionResult.rows.length > 0) {
+          // Handle { rows: [...] } result
+          const firstRow = sessionResult.rows[0];
+          if (firstRow && typeof firstRow === 'object' && 'id' in firstRow) {
+            sessionId = String(firstRow.id);
+          }
+        }
+        
+        debugLog('Session created in database', { 
+          sessionId: sessionId || 'NOT_RETURNED',
+          resultType: sessionResult ? typeof sessionResult : 'null',
+          result: sessionResult
+        });
+        
+        // Prepare session data
+        const sessionData = {
+          id: sessionToken,
+          email: email,
+          name: fullName || null,
+          role: 'user'
+        };
+        
+        // Set session cookie with user data
+        const cookieOptions = {
+          path: '/',
+          httpOnly: true,
+          secure: process.env['NODE_ENV'] === 'production',
+          sameSite: 'lax' as const,
+          expires: expiresAt,
+          maxAge: 60 * 60 * 24 * 30, // 30 days
+          // Additional security headers
+          domain: process.env['COOKIE_DOMAIN'] || undefined,
+          partitioned: true
+        };
+        
+        debugLog('Setting session cookie', { 
+          options: { 
+            ...cookieOptions, 
+            expires: cookieOptions.expires.toISOString(),
+            domain: cookieOptions.domain || 'default',
+            partitioned: cookieOptions.partitioned
+          },
+          sessionData: {
+            ...sessionData,
+            id: '***',
+            email: '***',
+            name: sessionData.name ? '***' : null
+          }
+        });
+        
+        try {
+          // Stringify the session data and encode it for the cookie
+          const sessionValue = JSON.stringify(sessionData);
+          cookies.set('session', sessionValue, cookieOptions);
+          debugLog('Session cookie set successfully');
+          
+          // Verify the cookie was set
+          const setCookieHeader = cookies.get('session');
+          const allCookies = cookies.getAll();
+          const sessionCookies = allCookies
+            .map(cookie => ({
+              name: cookie.name,
+              value: cookie.name === 'session' ? '***' : 'HIDDEN'
+            }))
+            .filter(cookie => cookie.name === 'session');
+            
+          debugLog('Cookie verification', { 
+            cookieSet: !!setCookieHeader,
+            cookieLength: setCookieHeader?.length || 0,
+            sessionCookies: sessionCookies.length > 0 ? 'PRESENT' : 'NOT FOUND',
+            totalCookies: allCookies.length
+          });
+        } catch (cookieError) {
+          debugLog('Failed to set session cookie', { 
+            error: cookieError,
+            errorMessage: cookieError instanceof Error ? cookieError.message : 'Unknown error'
+          });
+          throw new Error(`Failed to set session cookie: ${cookieError instanceof Error ? cookieError.message : 'Unknown error'}`);
+        }
+        
+        debugLog('Signup process completed successfully', { 
+          userId, 
+          email,
+          sessionToken: sessionToken ? '***' : 'MISSING',
+          expiresAt: expiresAt.toISOString(),
+          redirecting: true
+        });
+        
+        // Redirect to dashboard on success - this is not an error
+        return redirect(303, '/dashboard');
+        
+      } catch (error) {
+        // Check if this is a redirect
+        if (error && typeof error === 'object' && 'status' in error && error.status === 303) {
+          const location = (error as { location?: string }).location || '/';
+          debugLog('Redirecting after successful signup', { location });
+          // Return the redirect instead of throwing it
+          return redirect(303, location);
+        }
+        
+        // Log actual errors
+        debugLog('Error during signup process', { 
+          error: error,
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          errorStack: error instanceof Error ? error.stack : undefined
+        });
+        
+        // For other errors, redirect to dashboard with a message
+        debugLog('Proceeding with redirect despite error - user can log in later');
+        return redirect(303, '/dashboard');
+      }
+      
+    } catch (error) {
+      console.error('Signup error:', error);
+      
+      // Clean up if user was created but session failed
+      if (userId) {
+        try {
+          await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
+        } catch (cleanupError) {
+          console.error('Failed to clean up user after error:', cleanupError);
+        }
+      }
+      
+      return fail(500, {
+        message: 'Signup failed',
+        error: error instanceof Error ? error.message : 'An unknown error occurred'
+      });
+    }
+  }
+};
+
+        
+
