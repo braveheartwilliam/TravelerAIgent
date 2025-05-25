@@ -1,81 +1,67 @@
-import { writable } from 'svelte/store';
-
-// Define navigation item type
+// Navigation types
 export interface NavItem {
   title: string;
   href: string;
-  icon?: any; // Component type
+  icon?: any; // Svelte component
   isActive?: boolean;
   children?: NavItem[];
   requiresAuth?: boolean;
   roles?: string[];
 }
 
-// Create navigation store
-function createNavigationStore() {
-  const { subscribe, update } = writable<{
-    items: NavItem[];
-    mobileOpen: boolean;
-  }>({
-    items: [],
-    mobileOpen: false,
+// Navigation state type
+interface NavigationState {
+  items: NavItem[];
+  mobileOpen: boolean;
+}
+
+// Create a navigation store with Svelte 5 runes
+export function createNavigationStore(initialItems: NavItem[] = []) {
+  // Use $state for reactive state
+  const state = $state<NavigationState>({
+    items: initialItems,
+    mobileOpen: false
   });
 
-  // Toggle mobile menu
-  function toggleMobileMenu() {
-    update((state) => ({
-      ...state,
-      mobileOpen: !state.mobileOpen,
-    }));
-  }
-
-  // Close mobile menu
-  function closeMobileMenu() {
-    update((state) => ({
-      ...state,
-      mobileOpen: false,
-    }));
-  }
-
-  // Set navigation items
-  function setItems(items: NavItem[]) {
-    update((state) => ({
-      ...state,
-      items,
-    }));
-  }
-
-  // Update active state based on current path
-  function updateActiveState(path: string) {
-    update((state) => {
-      const updateItemActiveState = (items: NavItem[]): NavItem[] => {
-        return items.map((item) => {
-          const isActive = item.href === path;
-          const children = item.children ? updateItemActiveState(item.children) : undefined;
-          return {
-            ...item,
-            isActive,
-            children,
-          };
-        });
-      };
-
-      return {
-        ...state,
-        items: updateItemActiveState(state.items),
-      };
-    });
-  }
-
+  // Public API
   return {
-    subscribe,
-    toggleMobileMenu,
-    closeMobileMenu,
-    setItems,
-    updateActiveState,
+    // Getters
+    get items() {
+      return state.items;
+    },
+    
+    get isMobileOpen() {
+      return state.mobileOpen;
+    },
+
+    // Actions
+    toggleMobileMenu() {
+      state.mobileOpen = !state.mobileOpen;
+    },
+
+    closeMobileMenu() {
+      state.mobileOpen = false;
+    },
+
+    setItems(newItems: NavItem[]) {
+      state.items = newItems;
+    },
+
+    updateActiveState(path: string) {
+      const updateItemActiveState = (items: NavItem[]): NavItem[] => {
+        return items.map(item => ({
+          ...item,
+          isActive: item.href === path,
+          children: item.children ? updateItemActiveState(item.children) : undefined
+        }));
+      };
+
+      state.items = updateItemActiveState(state.items);
+    }
   };
 }
 
+// Create and export default navigation instance
 export const navigation = createNavigationStore();
 
 // Initialize with default navigation items

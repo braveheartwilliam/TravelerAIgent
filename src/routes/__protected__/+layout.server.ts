@@ -11,7 +11,16 @@ export const load: LayoutServerLoad = async ({ locals, url }) => {
     throw redirect(303, `/auth/signin?callbackUrl=${callbackUrl}`);
   }
 
+  // Return user data to be available in all child routes
   return {
-    user,
+    session: {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }
+    },
+    user: user // For backward compatibility
   };
 };

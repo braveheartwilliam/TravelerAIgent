@@ -2,23 +2,89 @@
   import { toast } from 'svelte-sonner';
   import { Loader2, Mail } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   
   // Form state
   let email = '';
+  let isAuthenticated = false;
+  let isCheckingAuth = true;
   let password = '';
   let rememberMe = false;
   let isLoading = false;
   let error = '';
   let callbackUrl = '/';
   
-  // Get callback URL from query params
-  onMount(() => {
+  // Check authentication status and handle redirects
+  async function checkAuth() {
+    // Skip auth check on server-side
+    if (typeof window === 'undefined') return false;
+    
+    try {
+      const response = await fetch('/api/auth/session', {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.user) {
+          isAuthenticated = true;
+          // Get the callback URL from the query parameters
+          const urlParams = new URLSearchParams(window.location.search);
+          let redirectTo = urlParams.get('callbackUrl');
+          
+          // Ensure the redirect URL is safe and relative
+          if (!redirectTo || !redirectTo.startsWith('/')) {
+            redirectTo = '/__protected__/dashboard';
+          } else {
+            // Basic validation to prevent open redirects
+            try {
+              const url = new URL(redirectTo, window.location.origin);
+              if (url.origin !== window.location.origin) {
+                console.warn('Invalid redirect URL, using default');
+                redirectTo = '/__protected__/dashboard';
+              }
+            } catch (e) {
+              console.warn('Invalid redirect URL, using default:', e);
+              redirectTo = '/__protected__/dashboard';
+            }
+          }
+          
+          // Use a small delay to ensure any UI updates are processed
+          setTimeout(() => {
+            console.log('Redirecting to:', redirectTo);
+            window.location.href = redirectTo;
+          }, 100);
+          
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.error('Error checking auth status:', err);
+      return false;
+    } finally {
+      isCheckingAuth = false;
+    }
+  }
+
+  // Get callback URL from query params and check auth status
+  onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
     const redirectUrl = urlParams.get('callbackUrl');
     
     if (redirectUrl) {
       callbackUrl = redirectUrl;
     }
+    
+    // Check if user is already authenticated
+    const isAuthed = await checkAuth();
+    if (isAuthed) return;
     
     // Show error message if present in URL
     const errorParam = urlParams.get('error');
@@ -28,6 +94,8 @@
     } else if (errorParam === 'session_error') {
       error = 'Session expired. Please sign in again.';
       toast.error(error);
+    } else {
+      isCheckingAuth = false;
     }
   });
   
@@ -40,97 +108,91 @@
     error = '';
     isLoading = true;
     
-    // Basic validation
-    if (!email || !password) {
-      error = 'Please fill in all fields';
-      toast.error(error);
-      isLoading = false;
-      return;
-    }
-    
-    // Email format validation
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      error = 'Please enter a valid email address';
-      toast.error(error);
-      isLoading = false;
-      return;
-    }
-    
     try {
+      // Basic validation
+      if (!email || !password) {
+        throw new Error('Please fill in all fields');
+      }
+      
+      // Email format validation
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Please enter a valid email address');
+      }
+      
       console.log('Sending sign-in request...');
       
-      // Get the current origin for CORS
-      const origin = window.location.origin;
+      // Get the callback URL from query params or use default
+      const urlParams = new URLSearchParams(window.location.search);
+      const redirectTo = urlParams.get('callbackUrl') || '/__protected__/dashboard';
       
-      // Make sure we're using the correct URL (no trailing slash)
-      const apiUrl = '/api/auth/signin';
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Origin': origin
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          rememberMe,
-          callbackUrl: '/'
-        }),
-        credentials: 'include',
-        redirect: 'manual' // Prevent automatic redirects
-      });
-      
-      // Handle different response types
-      const contentType = response.headers.get('content-type') || '';
-      let responseData;
-      
-      if (contentType.includes('application/json')) {
-        responseData = await response.json();
-      } else {
-        const text = await response.text();
-        console.error('Unexpected response format:', text);
-        throw new Error('Unexpected response from server');
+      try {
+        const response = await fetch('/api/auth/signin', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify({
+            email: email.toLowerCase().trim(),
+            password,
+            rememberMe,
+            callbackUrl: redirectTo
+          }),
+          credentials: 'include' // Important: include cookies for session
+        });
+        
+        const responseData = await response.json();
+        
+        if (response.ok && responseData.success) {
+          console.log('Sign-in successful:', responseData);
+          toast.success('Signed in successfully!');
+          
+          // Use the redirect URL from the response or fallback
+          const redirectUrl = responseData.redirectTo || redirectTo;
+          console.log('Preparing to redirect to:', redirectUrl);
+          
+          // Set authenticated state
+          isAuthenticated = true;
+          
+          // Clear any previous session data
+          localStorage.removeItem('session');
+          
+          // Use a small timeout to ensure the toast is visible
+          setTimeout(() => {
+            console.log('Initiating redirect to:', redirectUrl);
+            // Force a hard redirect to ensure session is properly set
+            window.location.href = redirectUrl;
+          }, 300);
+        } else {
+          // Handle error response
+          console.error('Sign-in failed:', response.status, responseData);
+          throw new Error(responseData.error || 'Authentication failed');
+        }
+      } catch (err) {
+        console.error('Network error during sign-in:', err);
+        throw new Error('Unable to connect to the server. Please try again.');
       }
-      
-      // Check if the response indicates success
-      if (response.ok) {
-        console.log('Sign-in successful:', responseData);
-        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-        console.log('Session cookie:', document.cookie);
-        
-        toast.success('Signed in successfully!');
-        
-        // Verify the redirect URL
-        const redirectUrl = responseData.redirect || '/__protected__/dashboard';
-        console.log('Preparing to redirect to:', redirectUrl);
-        
-        // Use a small timeout to ensure the toast is visible
-        setTimeout(() => {
-          console.log('Initiating redirect to:', redirectUrl);
-          window.location.href = redirectUrl;
-        }, 500);
-      } else {
-        // Handle error response
-        console.error('Sign-in failed:', response.status, responseData);
-        throw new Error(responseData.error || 'Authentication failed');
-      }
-    
-      
     } catch (error) {
       console.error('Sign in error:', error);
       const errorMessage = error instanceof Error ? error.message : 'An error occurred while signing in';
       toast.error(errorMessage);
       error = errorMessage;
-    } finally {
+      isCheckingAuth = false;
       isLoading = false;
     }
   }
 </script>
 
 <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+  {#if isCheckingAuth}
+    <div class="text-center p-8">
+      <p class="text-gray-600 mb-4">
+        {isAuthenticated ? 'Redirecting to dashboard...' : 'Checking authentication...'}
+      </p>
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+    </div>
+  {:else}
   <div class="max-w-md w-full space-y-8">
     <div>
       <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -233,4 +295,5 @@
       </div>
     </form>
   </div>
+  {/if}
 </div>

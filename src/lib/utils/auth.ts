@@ -49,13 +49,43 @@ export function requireRole(event: RequestEvent, roles: string | string[]): User
 }
 
 export function createSessionCookies(user: User, rememberMe: boolean = false) {
-  const sessionData = JSON.stringify(user);
-  const maxAge = rememberMe ? 60 * 60 * 24 * 7 : 60 * 60 * 24; // 1 week or 1 day
+  if (!user) {
+    throw new Error('Cannot create session cookies: User is required');
+  }
+  
+  // Create a safe user object with only the necessary fields
+  const sessionUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    // Add any other necessary fields, but be careful with sensitive data
+  };
+  
+  const sessionData = JSON.stringify(sessionUser);
+  const maxAge = rememberMe ? 60 * 60 * 24 * 7 : 60 * 60 * 24 * 2; // 1 week or 2 days
+  
+  // Create the cookie string
+  const cookieParts = [
+    `session=${encodeURIComponent(sessionData)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${maxAge}`
+  ];
+  
+  // Add Secure flag in production
+  if (process.env.NODE_ENV === 'production') {
+    cookieParts.push('Secure');
+  }
+  
+  // Add domain if in production
+  if (process.env.NODE_ENV === 'production' && process.env['COOKIE_DOMAIN']) {
+    cookieParts.push(`Domain=${process.env['COOKIE_DOMAIN']}`);
+  }
   
   return {
-    'Set-Cookie': `session=${sessionData}; Path=/; HttpOnly; SameSite=Lax${
-      process.env.NODE_ENV === 'production' ? '; Secure' : ''
-    }; Max-Age=${maxAge}`
+    'Set-Cookie': cookieParts.join('; ')
   };
 }
 
