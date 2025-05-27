@@ -7,7 +7,7 @@ CREATE TABLE "accounts" (
 	"provider_account_id" text NOT NULL,
 	"refresh_token" text,
 	"access_token" text,
-	"expires_at" integer,
+	"expires_at" timestamp with time zone,
 	"token_type" text,
 	"scope" text,
 	"id_token" text,
@@ -23,12 +23,25 @@ CREATE TABLE "sessions" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "trips" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"destination" text NOT NULL,
+	"description" text,
+	"start_date" timestamp with time zone NOT NULL,
+	"end_date" timestamp with time zone NOT NULL,
+	"budget" integer,
+	"status" text DEFAULT 'planned',
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "users" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"username" text NOT NULL,
+	"userName" text NOT NULL,
 	"email" text NOT NULL,
 	"password" text,
-	"full_name" text,
+	"fullName" text,
 	"profile_picture" text,
 	"phone" text,
 	"street" text,
@@ -43,16 +56,15 @@ CREATE TABLE "users" (
 	"reset_token" text,
 	"reset_token_expires" timestamp,
 	"github_id" text,
-	"role" "user_role" DEFAULT 'user' NOT NULL,
-	"is_active" boolean DEFAULT true NOT NULL,
+	"role" "user_role" DEFAULT 'user',
+	"is_active" boolean DEFAULT true,
 	"last_login" timestamp,
+	"last_failed_login" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"reset_password_token" text,
 	"reset_password_expires" timestamp,
-	CONSTRAINT "users_username_unique" UNIQUE("username"),
-	CONSTRAINT "users_email_unique" UNIQUE("email"),
-	CONSTRAINT "users_github_id_unique" UNIQUE("github_id")
+	"salt" text
 );
 --> statement-breakpoint
 CREATE TABLE "verification_tokens" (
@@ -62,4 +74,10 @@ CREATE TABLE "verification_tokens" (
 );
 --> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "trips" ADD CONSTRAINT "trips_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "trips_user_id_idx" ON "trips" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "trips_status_idx" ON "trips" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "users_email_idx" ON "users" USING btree ("email");--> statement-breakpoint
+CREATE INDEX "users_username_idx" ON "users" USING btree ("userName");--> statement-breakpoint
+CREATE INDEX "users_github_id_idx" ON "users" USING btree ("github_id");

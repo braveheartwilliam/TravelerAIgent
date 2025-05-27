@@ -4,6 +4,8 @@ trigger: always_on
 
 # Svelte 5 and SvelteKit 2 Coding Style Guide
 
+! Always follow Svelte5 and Sveltekit 2 best practices and adhere to Svelte 5 and Sveltekit 2 standards, conventions and coding practices as defined by Svelte.
+
 ## 1. Project Structure
 - **Organize files logically**:
   - Keep all Svelte code in the `src` folder.
@@ -98,3 +100,14 @@ trigger: always_on
 - **Community and AI tools**:
   - Use the Svelte Discord for community support and the official `llms.txt` for AI-assisted coding with Svelte 5.
   - Share projects and tutorials to contribute to the Svelte community.
+
+## 7. Implementation in Svelte
+
+When implementing these UI design principles in Svelte:
+
+- Use Svelte's scoped styles for component-specific styling
+- Leverage CSS custom properties for theming and consistent styling
+- Implement responsive design using Tailwind CSS utility classes or custom media queries
+- Ensure all interactive elements are keyboard-navigable
+- Use Svelte's built-in transitions for smooth, performant animations
+- Follow the project's established patterns for component structure and organization

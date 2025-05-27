@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, pgEnum, serial, boolean, pgSchema, jsonb, index, integer } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, pgEnum, serial, boolean, pgSchema, jsonb, index, integer, numeric } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import type { AdapterAccount } from '@auth/core/adapters';
@@ -42,7 +42,7 @@ export const users = pgTable('users', {
 }, (table) => ({
   // Add indexes to match the database
   emailIdx: index('users_email_idx').on(table.email),
-  userNameIdx: index('users_username_idx').on(table.userName),
+  userNameIdx: index('users_userName_idx').on(table.userName),
   githubIdIdx: index('users_github_id_idx').on(table.github_id)
 }));
 
@@ -83,6 +83,23 @@ export const verificationTokens = pgTable('verification_tokens', {
   expires: timestamp('expires', { withTimezone: true }).notNull()
 });
 
+// Trips table
+export const trips = pgTable('trips', {
+  id: serial('id').primaryKey(),
+  user_id: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  destination: text('destination').notNull(),
+  description: text('description'),
+  start_date: timestamp('start_date', { withTimezone: true }).notNull(),
+  end_date: timestamp('end_date', { withTimezone: true }).notNull(),
+  budget: numeric('budget', { precision: 10, scale: 2 }),
+  status: text('status').default('planned').notNull(),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+  updated_at: timestamp('updated_at').defaultNow().notNull()
+}, (table) => ({
+  userIdIdx: index('trips_user_id_idx').on(table.user_id),
+  statusIdx: index('trips_status_idx').on(table.status)
+}));
+
 // Create a composite primary key for verification tokens
 export const verificationTokensRelations = {
   primaryKey: {
@@ -108,7 +125,7 @@ export const insertVerificationTokenSchema = createInsertSchema(verificationToke
 export const selectVerificationTokenSchema = createSelectSchema(verificationTokens);
 
 // Export types for external use
-export type User = {
+export interface User {
   id: number;
   userName: string;
   email: string;
@@ -122,7 +139,7 @@ export type User = {
   state: string | null;
   postal_code: string | null;
   country: string | null;
-  address_coords: Record<string, any> | null;
+  address_coords: any | null;
   email_verified: Date | null;
   verification_token: string | null;
   reset_token: string | null;
@@ -132,17 +149,30 @@ export type User = {
   is_active: boolean;
   last_login: Date | null;
   last_failed_login: Date | null;
-  reset_password_token: string | null;
-  reset_password_expires: Date | null;
   created_at: Date;
   updated_at: Date;
+  reset_password_token: string | null;
+  reset_password_expires: Date | null;
   salt: string | null;
-};
+}
 
-export type NewUser = Omit<User, 'id' | 'created_at' | 'updated_at'> & {
-  created_at?: Date;
-  updated_at?: Date;
-};
+export type NewUser = Omit<User, 'id' | 'created_at' | 'updated_at'>;
+
+// Explicitly define Trip type to match database schema
+export interface Trip {
+  id: number;
+  user_id: number;
+  destination: string;
+  description: string | null;
+  start_date: Date;
+  end_date: Date;
+  budget: string | null;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export type NewTrip = typeof trips.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type Session = typeof sessions.$inferSelect;

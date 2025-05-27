@@ -14,6 +14,7 @@ export default defineConfig({
     user: url.username,
     password: url.password || undefined,
     database: url.pathname.replace(/^\//, ''),
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   },
   verbose: true,
   strict: true,

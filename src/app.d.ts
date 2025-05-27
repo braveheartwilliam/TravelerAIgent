@@ -12,25 +12,54 @@ declare global {
   namespace App {
     // interface Error {}
     interface Locals {
+      user: {
+        id: string;
+        email: string;
+        name: string | null;
+        userName: string;
+        role: 'user' | 'admin';
+        is_active: boolean;
+        createdAt: string;
+        updatedAt: string;
+      } | null;
+      session?: any; // Session data
       getSession: () => Promise<{
         user?: {
           id: string;
           name?: string | null;
           email?: string | null;
+          userName: string;
+          role: 'user' | 'admin';
+          is_active: boolean;
           image?: string | null;
-          role?: string;
+          createdAt?: string;
+          updatedAt?: string;
         } | null;
       } | null>;
     }
     
     interface PageData {
+      user?: {
+        id: string;
+        email: string;
+        name: string | null;
+        userName: string;
+        role: 'user' | 'admin';
+        is_active: boolean;
+        createdAt: string;
+        updatedAt: string;
+      } | null;
       session?: {
         user?: {
           id: string;
+          email: string;
           name?: string | null;
-          email?: string | null;
+          userName: string;
+          role: 'user' | 'admin';
+          is_active: boolean;
+          createdAt?: string;
+          updatedAt?: string;
           image?: string | null;
-          role?: string;
         } | null;
       } | null;
     }
@@ -64,11 +93,17 @@ declare global {
 
   // Extend the User type from @auth/core/types
   interface User {
-    id: string;
+    id: string | number;
     name?: string | null;
     email?: string | null;
     image?: string | null;
     role?: string;
+    fullName?: string | null;
+    userName?: string;
+    is_active?: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+    expires?: string;
   }
 
   // Svelte 5 component types

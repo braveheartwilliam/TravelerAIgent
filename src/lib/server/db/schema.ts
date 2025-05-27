@@ -7,7 +7,7 @@ export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 // User schema
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
-  username: text('username').notNull().unique(),
+  userName: text('user_name').notNull().unique(),
   email: text('email').notNull().unique(),
   password: text('password'), // Nullable for OAuth users
   fullName: text('full_name'),

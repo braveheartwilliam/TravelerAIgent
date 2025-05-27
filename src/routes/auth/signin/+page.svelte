@@ -3,6 +3,7 @@
   import { Loader2, Mail } from 'lucide-svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { SESSION_COOKIE_NAME } from '$lib/constants';
   import { goto } from '$app/navigation';
   
   // Form state
@@ -21,7 +22,9 @@
     if (typeof window === 'undefined') return false;
     
     try {
+      console.log('Checking authentication status...');
       const response = await fetch('/api/auth/session', {
+        method: 'GET',
         credentials: 'include',
         headers: {
           'Accept': 'application/json',
@@ -30,13 +33,17 @@
         }
       });
       
+      console.log('Auth check response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Auth check response data:', data);
+        
         if (data?.user) {
           isAuthenticated = true;
           // Get the callback URL from the query parameters
           const urlParams = new URLSearchParams(window.location.search);
-          let redirectTo = urlParams.get('callbackUrl');
+          let redirectTo = urlParams.get('redirectTo') || urlParams.get('callbackUrl');
           
           // Ensure the redirect URL is safe and relative
           if (!redirectTo || !redirectTo.startsWith('/')) {
@@ -55,9 +62,10 @@
             }
           }
           
+          console.log('User is authenticated, redirecting to:', redirectTo);
+          
           // Use a small delay to ensure any UI updates are processed
           setTimeout(() => {
-            console.log('Redirecting to:', redirectTo);
             window.location.href = redirectTo;
           }, 100);
           
@@ -76,24 +84,59 @@
   // Get callback URL from query params and check auth status
   onMount(async () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const redirectUrl = urlParams.get('callbackUrl');
+    const redirectUrl = urlParams.get('callbackUrl') || urlParams.get('from');
     
     if (redirectUrl) {
-      callbackUrl = redirectUrl;
+      // Ensure the redirect URL is safe and relative
+      try {
+        const url = new URL(redirectUrl, window.location.origin);
+        if (url.origin === window.location.origin) {
+          callbackUrl = redirectUrl;
+        }
+      } catch (e) {
+        console.warn('Invalid redirect URL, using default');
+      }
     }
     
     // Check if user is already authenticated
     const isAuthed = await checkAuth();
     if (isAuthed) return;
     
-    // Show error message if present in URL
+      // Show success/error messages from URL parameters
     const errorParam = urlParams.get('error');
-    if (errorParam === 'invalid_credentials') {
-      error = 'Invalid email or password';
-      toast.error(error);
-    } else if (errorParam === 'session_error') {
-      error = 'Session expired. Please sign in again.';
-      toast.error(error);
+    const messageParam = urlParams.get('message');
+    
+    // Handle success messages
+    if (messageParam === 'signed_out') {
+      toast.success('You have been successfully signed out');
+    }
+    
+    // Handle error messages
+    if (errorParam) {
+      switch (errorParam) {
+        case 'invalid_credentials':
+          error = 'Invalid email or password';
+          break;
+        case 'session_expired':
+          error = 'Your session has expired. Please sign in again.';
+          break;
+        case 'invalid_session':
+          error = 'Invalid session. Please sign in again.';
+          break;
+        case 'account_deactivated':
+          error = 'Your account has been deactivated. Please contact support.';
+          break;
+        case 'sign_out_failed':
+          error = 'Failed to sign out. Please try again.';
+          break;
+        case 'session_error':
+        default:
+          error = 'An error occurred with your session. Please sign in again.';
+      }
+      
+      if (error) {
+        toast.error(error);
+      }
     } else {
       isCheckingAuth = false;
     }
@@ -107,6 +150,7 @@
     // Reset state
     error = '';
     isLoading = true;
+    isCheckingAuth = true;
     
     try {
       // Basic validation
@@ -123,61 +167,93 @@
       
       // Get the callback URL from query params or use default
       const urlParams = new URLSearchParams(window.location.search);
-      const redirectTo = urlParams.get('callbackUrl') || '/__protected__/dashboard';
+      const redirectTo = urlParams.get('redirectTo') || urlParams.get('callbackUrl') || '/__protected__/dashboard';
       
+      // Ensure the redirect URL is safe and relative
+      let safeRedirectTo = '/__protected__/dashboard';
       try {
-        const response = await fetch('/api/auth/signin', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          body: JSON.stringify({
-            email: email.toLowerCase().trim(),
-            password,
-            rememberMe,
-            callbackUrl: redirectTo
-          }),
-          credentials: 'include' // Important: include cookies for session
-        });
-        
-        const responseData = await response.json();
-        
-        if (response.ok && responseData.success) {
-          console.log('Sign-in successful:', responseData);
-          toast.success('Signed in successfully!');
-          
-          // Use the redirect URL from the response or fallback
-          const redirectUrl = responseData.redirectTo || redirectTo;
-          console.log('Preparing to redirect to:', redirectUrl);
-          
-          // Set authenticated state
-          isAuthenticated = true;
-          
-          // Clear any previous session data
-          localStorage.removeItem('session');
-          
-          // Use a small timeout to ensure the toast is visible
-          setTimeout(() => {
-            console.log('Initiating redirect to:', redirectUrl);
-            // Force a hard redirect to ensure session is properly set
-            window.location.href = redirectUrl;
-          }, 300);
-        } else {
-          // Handle error response
-          console.error('Sign-in failed:', response.status, responseData);
-          throw new Error(responseData.error || 'Authentication failed');
+        if (redirectTo.startsWith('/')) {
+          const url = new URL(redirectTo, window.location.origin);
+          if (url.origin === window.location.origin) {
+            safeRedirectTo = redirectTo;
+          }
         }
-      } catch (err) {
-        console.error('Network error during sign-in:', err);
-        throw new Error('Unable to connect to the server. Please try again.');
+      } catch (e) {
+        console.warn('Invalid redirect URL, using default:', e);
       }
-    } catch (error) {
-      console.error('Sign in error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred while signing in';
-      toast.error(errorMessage);
-      error = errorMessage;
+      
+      // Prepare the request data
+      const requestData = {
+        email: email.toLowerCase().trim(),
+        password: password,
+        remember: rememberMe,
+        callbackUrl: safeRedirectTo
+      };
+      
+      // Submit the form with JSON data to the correct better-auth endpoint
+      const response = await fetch('/api/auth/signin', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          remember: rememberMe
+        })
+      });
+      
+      // Handle the response
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to sign in');
+      }
+      
+      if (data.success) {
+        // Show success message
+        toast.success('Signed in successfully');
+        
+        // Redirect to dashboard or intended URL after a short delay
+        const redirectTo = new URLSearchParams(window.location.search).get('redirectTo') || '/__protected__/dashboard';
+        setTimeout(() => {
+          window.location.href = redirectTo;
+        }, 1000);
+      } else {
+        throw new Error(data?.error || 'Failed to sign in');
+      }
+    } catch (err) {
+      console.error('Sign in error:', err);
+      error = err instanceof Error ? err.message : 'Failed to sign in. Please try again.';
+      toast.error(error);
+      
+      // Clear any existing session data
+      try {
+        // Clear local storage and session storage
+        localStorage.removeItem('user');
+        sessionStorage.clear();
+        
+        // Clear cookies by setting an expired cookie with the same domain
+        const domain = window.location.hostname === 'localhost' ? 'localhost' : window.location.hostname;
+        document.cookie = `${SESSION_COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Domain=${domain};`;
+        
+        // Call the signout endpoint to clean up server-side session
+        try {
+          await fetch('/api/auth/signout', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+        } catch (signOutError) {
+          console.error('Failed to clear server session:', signOutError);
+        }
+      } catch (clearError) {
+        console.error('Failed to clear client session data:', clearError);
+      }
       isCheckingAuth = false;
       isLoading = false;
     }

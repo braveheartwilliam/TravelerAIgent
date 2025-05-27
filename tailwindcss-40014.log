@@ -1,0 +1,8 @@
+2025-05-25T10:10:35.427079Z  INFO tailwindcss_oxide::scanner: Provided sources:
+2025-05-25T10:10:35.427123Z  INFO tailwindcss_oxide::scanner: Source: PublicSourceEntry { base: "/Users/williamwallacepro/Windsurf/TravelAIgentSvelte/TravelerAIgent-Svelte", pattern: "**/*", negated: false }
+2025-05-25T10:10:35.427157Z  INFO tailwindcss_oxide::scanner: Optimized sources:
+2025-05-25T10:10:35.427163Z  INFO tailwindcss_oxide::scanner: Source: Auto { base: "/Users/williamwallacepro/Windsurf/TravelAIgentSvelte/TravelerAIgent-Svelte" }
+2025-05-25T10:10:40.503723Z  INFO tailwindcss_oxide::scanner: Provided sources:
+2025-05-25T10:10:40.503759Z  INFO tailwindcss_oxide::scanner: Source: PublicSourceEntry { base: "/Users/williamwallacepro/Windsurf/TravelAIgentSvelte/TravelerAIgent-Svelte", pattern: "**/*", negated: false }
+2025-05-25T10:10:40.503789Z  INFO tailwindcss_oxide::scanner: Optimized sources:
+2025-05-25T10:10:40.503793Z  INFO tailwindcss_oxide::scanner: Source: Auto { base: "/Users/williamwallacepro/Windsurf/TravelAIgentSvelte/TravelerAIgent-Svelte" }

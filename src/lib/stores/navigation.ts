@@ -1,3 +1,5 @@
+import { writable, type Writable } from 'svelte/store';
+
 // Navigation types
 export interface NavItem {
   title: string;
@@ -15,36 +17,52 @@ interface NavigationState {
   mobileOpen: boolean;
 }
 
-// Create a navigation store with Svelte 5 runes
+// Create a navigation store with Svelte 5
 export function createNavigationStore(initialItems: NavItem[] = []) {
-  // Use $state for reactive state
-  const state = $state<NavigationState>({
+  // Create a writable store for the navigation state
+  const { subscribe, update } = writable<NavigationState>({
     items: initialItems,
     mobileOpen: false
   });
 
   // Public API
   return {
+    // Subscribe to store changes
+    subscribe,
+    
     // Getters
     get items() {
-      return state.items;
+      let currentItems: NavItem[] = [];
+      subscribe($state => { currentItems = $state.items; })();
+      return currentItems;
     },
     
     get isMobileOpen() {
-      return state.mobileOpen;
+      let isOpen = false;
+      subscribe($state => { isOpen = $state.mobileOpen; })();
+      return isOpen;
     },
 
     // Actions
     toggleMobileMenu() {
-      state.mobileOpen = !state.mobileOpen;
+      update(state => ({
+        ...state,
+        mobileOpen: !state.mobileOpen
+      }));
     },
 
     closeMobileMenu() {
-      state.mobileOpen = false;
+      update(state => ({
+        ...state,
+        mobileOpen: false
+      }));
     },
 
     setItems(newItems: NavItem[]) {
-      state.items = newItems;
+      update(state => ({
+        ...state,
+        items: newItems
+      }));
     },
 
     updateActiveState(path: string) {
@@ -56,7 +74,10 @@ export function createNavigationStore(initialItems: NavItem[] = []) {
         }));
       };
 
-      state.items = updateItemActiveState(state.items);
+      update(state => ({
+        ...state,
+        items: updateItemActiveState(state.items)
+      }));
     }
   };
 }

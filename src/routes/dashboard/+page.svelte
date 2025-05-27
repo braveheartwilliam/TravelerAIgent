@@ -3,11 +3,13 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
+  import Navigation from '$lib/components/Navigation.svelte';
+  import Footer from '$lib/components/Footer.svelte';
 
   let isLoading = true;
+  let showGuidedModal = false;
   
   onMount(() => {
-    // If user is not logged in, redirect to sign in
     if (!$page.data.user) {
       goto('/auth/signin');
     } else {
@@ -15,65 +17,165 @@
     }
   });
 
-  async function handleSignOut() {
-    try {
-      const response = await fetch('/api/auth/signout', {
-        method: 'POST'
-      });
-      
-      if (response.ok) {
-        toast.success('Signed out successfully!');
-        window.location.href = '/';
-      } else {
-        throw new Error('Failed to sign out');
-      }
-    } catch (error) {
-      console.error('Sign out error:', error);
-      toast.error('Failed to sign out. Please try again.');
+  function toggleGuidedModal() {
+    showGuidedModal = !showGuidedModal;
+  }
+
+  function navigateTo(route: string) {
+    goto(route);
+  }
+  
+  function handleKeyDown(event: KeyboardEvent, action: () => void) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      action();
     }
   }
 </script>
 
-<div class="min-h-screen bg-gray-50">
-  <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-    {#if isLoading}
-      <div class="text-center py-12">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600"></div>
-        <p class="mt-2 text-sm text-gray-600">Loading dashboard...</p>
+<!-- Main Layout -->
+<div class="min-h-screen flex flex-col bg-gradient-to-br from-blue-900 to-blue-600 bg-cover bg-center" style="background-image: url('/images/world-map-bg.jpg');">
+  <!-- Navigation -->
+  <Navigation />
+
+  <!-- Main Content -->
+  <main class="flex-grow pt-24 pb-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <!-- Hero Section -->
+      <div class="text-center mb-12">
+        <h1 class="text-4xl md:text-6xl font-extrabold text-white mb-4">
+          <span class="block">Your Travel Plans and</span>
+          <span class="text-blue-200">Travel Memories</span>
+        </h1>
+        <p class="mt-6 text-xl text-blue-100 max-w-3xl mx-auto">
+          All in one place. Plan, explore, and relive your adventures with ease.
+        </p>
       </div>
-    {:else if $page.data.user}
-      <div class="bg-white shadow rounded-lg p-6">
-        <div class="flex justify-between items-center mb-6">
-          <div>
-            <h1 class="text-2xl font-bold text-gray-900">Welcome, {$page.data.user.name || 'User'}!</h1>
-            <p class="text-gray-600">You're now signed in to your account.</p>
+
+      <!-- Features Grid -->
+      <div class="grid md:grid-cols-3 gap-8 mb-12">
+        {#each [
+          {
+            title: 'Travel Plans',
+            description: 'Create and manage your travel plans with ease.',
+            icon: '✈️'
+          },
+          {
+            title: 'Travel Memories',
+            description: 'Capture and cherish your travel experiences forever.',
+            icon: '📸'
+          },
+          {
+            title: 'Traveler Advisor',
+            description: 'Get personalized recommendations for your next adventure.',
+            icon: '🧭'
+          }
+        ] as item}
+          <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6 text-center text-white">
+            <div class="text-4xl mb-4">{item.icon}</div>
+            <h3 class="text-xl font-bold mb-2">{item.title}</h3>
+            <p class="text-blue-100">{item.description}</p>
           </div>
-          <button
-            on:click={handleSignOut}
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        {/each}
+      </div>
+
+      <!-- Call to Action -->
+      <div class="text-center">
+        <div class="flex flex-col sm:flex-row justify-center gap-4 mb-8">
+          <button 
+            on:click={() => navigateTo('/trips/new')}
+            class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
           >
-            Sign out
+            Create Trip
+          </button>
+          <button 
+            on:click={() => navigateTo('/memories/new')}
+            class="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg backdrop-blur-sm border border-white/20 hover:border-white/30 transition-all duration-200"
+          >
+            Create Memory
           </button>
         </div>
-        
-        <div class="bg-gray-50 p-4 rounded-lg">
-          <h2 class="text-lg font-medium text-gray-900 mb-4">Your Account Information</h2>
-          <div class="space-y-2">
-            <div class="flex">
-              <span class="w-32 text-sm font-medium text-gray-500">Name:</span>
-              <span class="text-sm text-gray-900">{$page.data.user.name || 'Not provided'}</span>
-            </div>
-            <div class="flex">
-              <span class="w-32 text-sm font-medium text-gray-500">Email:</span>
-              <span class="text-sm text-gray-900">{$page.data.user.email}</span>
-            </div>
-            <div class="flex">
-              <span class="w-32 text-sm font-medium text-gray-500">Role:</span>
-              <span class="text-sm text-gray-900 capitalize">{$page.data.user.role}</span>
-            </div>
-          </div>
+
+        <!-- Guided Creation -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6 max-w-2xl mx-auto">
+          <p class="text-blue-100 mb-4">
+            Click the button to start a guided creation of plans for a new trip or the capture of a new memory.
+          </p>
+          <button
+            on:click={toggleGuidedModal}
+            class="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+          >
+            Let's Get Started
+          </button>
         </div>
       </div>
-    {/if}
-  </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <Footer />
+
+  <!-- Guided Creation Modal -->
+  {#if showGuidedModal}
+    <div 
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      on:click|self={toggleGuidedModal}
+      on:keydown={(e: KeyboardEvent) => e.key === 'Escape' && toggleGuidedModal()}
+      tabindex="-1"
+    >
+      <div 
+        class="bg-white rounded-lg max-w-md w-full p-6 animate-fade-in"
+        role="document"
+      >
+        <h3 id="modal-title" class="text-xl font-bold text-gray-900 mb-4">
+          What would you like to create?
+        </h3>
+        <div class="space-y-4">
+          <button
+            on:click={() => navigateTo('/trips/new?guided=true')}
+            on:keydown={(e: KeyboardEvent) => handleKeyDown(e, () => navigateTo('/trips/new?guided=true'))}
+            class="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            tabindex="0"
+          >
+            <h4 class="font-medium text-gray-900">Plan a New Trip</h4>
+            <p class="text-sm text-gray-500">Get step-by-step guidance to plan your next adventure</p>
+          </button>
+          <button
+            on:click={() => navigateTo('/memories/new?guided=true')}
+            on:keydown={(e: KeyboardEvent) => handleKeyDown(e, () => navigateTo('/memories/new?guided=true'))}
+            class="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            tabindex="0"
+          >
+            <h4 class="font-medium text-gray-900">Create a Memory</h4>
+            <p class="text-sm text-gray-500">Document and share your travel experiences</p>
+          </button>
+        </div>
+        <div class="mt-6 text-center">
+          <button
+            on:click={toggleGuidedModal}
+            on:keydown={(e: KeyboardEvent) => handleKeyDown(e, toggleGuidedModal)}
+            class="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-2 py-1"
+            tabindex="0"
+            aria-label="Close modal"
+          >
+            Maybe later
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
+
+<!-- Add some global styles for the modal animation -->
+<style>
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out forwards;
+  }
+</style>
