@@ -1,6 +1,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Global styles for Lucide icons */
+:global(svg[data-lucide]) {
+  width: 16px !important;
+  height: 16px !important;
+}
  
 @layer base {
   :root {

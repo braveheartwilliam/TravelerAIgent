@@ -83,6 +83,11 @@ function isPublicPath(path: string | undefined | null): boolean {
       return false;
     }
     
+    // IMPORTANT: /trips should NOT be a public path as it requires authentication
+    if (normalizedPath === '/trips' || normalizedPath.startsWith('/trips/')) {
+      return false;
+    }
+    
     // Check exact matches first for performance
     if (PUBLIC_PATHS.has(normalizedPath)) {
       return true;
@@ -114,8 +119,17 @@ const handleAuth: Handle = async ({ event, resolve }) => {
   const { pathname, searchParams } = url;
   const callbackUrl = searchParams.get('callbackUrl') || pathname;
   
-  // Debug log the current request
-  console.log(`[handleAuth] Processing request for: ${pathname}`);
+  // Enhanced debug logging for request tracking
+  console.log(`[handleAuth] Processing request for: ${pathname}`, {
+    timestamp: new Date().toISOString(),
+    method: event.request.method,
+    url: url.toString(),
+    headers: {
+      'user-agent': event.request.headers.get('user-agent')?.substring(0, 50) || 'unknown',
+      'accept': event.request.headers.get('accept') || 'unknown',
+      'content-type': event.request.headers.get('content-type') || 'unknown'
+    }
+  });
   
   // Handle public paths
   if (isPublicPath(pathname)) {
@@ -124,24 +138,56 @@ const handleAuth: Handle = async ({ event, resolve }) => {
   }
 
   console.log('[handleAuth] Checking session...');
-  const session = await getSessionUtil(event.cookies);
+  // Declare session variable outside try block to maintain scope
+  let session;
   
-  if (!session) {
-    console.log('[handleAuth] No valid session found, redirecting to signin');
-    throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+  try {
+    session = await getSessionUtil(event.cookies);
+    
+    if (!session) {
+      console.log('[handleAuth] No valid session found, redirecting to signin');
+      throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    }
+
+    // Enhanced session validation
+    if (!session.user || !session.user.id || !session.user.email) {
+      console.error('[handleAuth] Session found but missing user data');
+      throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}&error=invalid_session`);
+    }
+
+    if (!session.user.is_active) {
+      console.error('[handleAuth] User account is inactive:', session.user.id);
+      throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}&error=account_inactive`);
+    }
+
+    // Check session expiration
+    const now = new Date();
+    if (new Date(session.expiresAt) < now) {
+      console.error('[handleAuth] Session expired:', {
+        userId: session.user.id,
+        expiresAt: session.expiresAt,
+        now: now.toISOString()
+      });
+      throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}&error=session_expired`);
+    }
+
+    // Debug log the session data (without sensitive info)
+    console.log('[handleAuth] Valid session found for user:', {
+      id: session.user.id,
+      email: session.user.email,
+      userName: session.user.userName,
+      role: session.user.role,
+      is_active: session.user.is_active,
+      expiresAt: session.expiresAt,
+      sessionAge: Math.floor((now.getTime() - new Date(session.createdAt).getTime()) / 1000 / 60) + ' minutes'
+    });
+  } catch (error) {
+    console.error('[handleAuth] Error processing session:', error);
+    throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}&error=session_error`);
   }
 
-  // Debug log the session data (without sensitive info)
-  console.log('[handleAuth] Valid session found for user:', {
-    id: session.user?.id,
-    email: session.user?.email,
-    userName: session.user?.userName,
-    role: session.user?.role,
-    is_active: session.user?.is_active
-  });
-
   // Ensure we have the required user data
-  if (!session.user?.id || !session.user?.email) {
+  if (!session?.user?.id || !session?.user?.email) {
     console.error('[handleAuth] Invalid session data: missing required user fields');
     throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}&error=invalid_session`);
   }
@@ -198,6 +244,22 @@ const handleAuth: Handle = async ({ event, resolve }) => {
       maxAge: 60 * 60 * 24 * 30, // 30 days
       domain
     });
+    
+    // Ensure the user data is also set in the page data for client-side access
+    event.locals.user = userData;
+    
+    // For protected routes, ensure the user data is available
+    if (pathname.startsWith('/__protected__')) {
+      return await resolve(event, {
+        transformPageChunk: ({ html }) => {
+          // Inject user data into the page for client-side hydration
+          return html.replace(
+            '<body',
+            `<script>window.__user__ = ${JSON.stringify(userData)}</script><body`
+          );
+        }
+      });
+    }
     
     console.log('[handleAuth] Session cookie set with options:', {
       secure: isProduction,

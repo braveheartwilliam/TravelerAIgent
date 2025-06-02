@@ -1,4 +1,5 @@
 import { redirect, type Cookies, type RequestEvent } from '@sveltejs/kit';
+import bcrypt from 'bcryptjs';
 
 interface UserBase {
   id: string | number;
@@ -16,13 +17,6 @@ type User = UserBase & {
   [key: string]: unknown;
 };
 
-interface NullableUser extends Omit<Partial<User>, 'id' | 'email' | 'name' | 'userName' | 'role'> {
-  id?: string | number | null;
-  email?: string | null;
-  name?: string | null;
-  userName?: string | null;
-  role?: string | null;
-}
 
 export function getUserFromCookies(cookies: Cookies): User | null {
   try {
@@ -39,7 +33,8 @@ export function getUserFromCookies(cookies: Cookies): User | null {
     try {
       // First try to parse as is (might be already decoded)
       parsedData = JSON.parse(session);
-    } catch (e) {
+    } catch {
+
       try {
         // If that fails, try URL decoding first
         const decodedSession = decodeURIComponent(session);
@@ -237,16 +232,41 @@ export function createSessionCookies(user: User, rememberMe: boolean = false) {
     return cookie;
   });
   
-  return {
-    'Set-Cookie': cookieStrings
-  };
-}
 
 export function clearSessionCookies(): string[] {
   const cookies = [
     // Main session cookie
     'session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax',
-    
+    // Auth.js related cookies
+    'authjs.callback-url=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax',
+    'authjs.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax',
+    // Remember me cookie
+    'remember_me=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax'
+  ];
+
+  // Add secure flag in production
+  if (process.env.NODE_ENV === 'production') {
+    return cookies.map((cookie: string) => cookie + '; Secure');
+  }
+  return cookies;
+}
+
+// --- PASSWORD HASHING UTILS ---
+
+/**
+ * Hash a password using bcrypt (12 salt rounds)
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const saltRounds = 12;
+  return await bcrypt.hash(password, saltRounds);
+}
+
+/**
+ * Verify a password against a hash
+ */
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return await bcrypt.compare(password, hash);
+}
     // Auth.js related cookies
     'authjs.callback-url=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax',
     'authjs.csrf-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax',

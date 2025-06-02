@@ -388,33 +388,38 @@ export async function deleteSession(cookies?: Cookies, sessionId?: string): Prom
  */
 export function createSessionCookie(sessionData: SessionData): string {
   const isProduction = process.env.NODE_ENV === 'production';
-  const domain = isProduction ? process.env.COOKIE_DOMAIN || '' : '';
+  const domain = isProduction ? process.env.COOKIE_DOMAIN || undefined : undefined;
   
+  // Enhanced cookie settings for better security and consistency
   const cookieParts = [
     `${SESSION_COOKIE_NAME}=${sessionData.id}`,
     'Path=/',
     `Max-Age=${SESSION_MAX_AGE}`,
     'HttpOnly',
     'SameSite=Lax',
-    `Secure=${isProduction}`,
-    ...(domain ? [`Domain=${domain}`] : [])
+    isProduction ? 'Secure' : '',  // Use proper format for Secure flag
+    domain ? `Domain=${domain}` : ''
   ];
 
-  // Log the cookie being set for debugging
+  // Enhanced logging for better debugging
   console.log(`[createSessionCookie] Creating session cookie for user ${sessionData.user.id}`, {
+    id: sessionData.id.substring(0, 8) + '...', // Show partial ID for security
+    userId: sessionData.user.id,
+    email: sessionData.user.email,
     secure: isProduction,
-    domain: domain || 'localhost',
+    domain: domain || 'default',
     maxAge: SESSION_MAX_AGE,
     sameSite: 'lax',
     httpOnly: true,
-    path: '/'
+    path: '/',
+    expiresAt: sessionData.expiresAt.toISOString()
   });
 
   // Filter out any empty parts and join with semicolons
   const cookieString = cookieParts
-    .filter(part => !part.endsWith('=') && part !== '')
+    .filter(part => part !== '')
     .join('; ');
 
-  console.log(`[createSessionCookie] Cookie string: ${cookieString.substring(0, 50)}...`);
+  console.log(`[createSessionCookie] Cookie string (truncated): ${cookieString.substring(0, 40)}...`);
   return cookieString;
 }

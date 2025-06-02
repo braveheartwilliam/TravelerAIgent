@@ -1,8 +1,11 @@
 <script lang="ts">
-  import Button from '../../../lib/components/ui/button/button.svelte';
+  import Button from '$lib/components/ui/button/button.svelte';
   
-  function goBack(event: MouseEvent) {
-    event.preventDefault();
+  function goBack(event: CustomEvent<any>) {
+    // Prevent default if available
+    if (event.detail?.nativeEvent) {
+      event.detail.nativeEvent.preventDefault();
+    }
     window.history.back();
   }
 </script>

@@ -4,8 +4,6 @@
   import { navigation, defaultNavItems } from '$lib/stores/navigation';
   import type { User } from '$lib/types';
   import type { PageData } from './types';
-  import MainNav from '$lib/components/navigation/MainNav.svelte';
-  import Sidebar from '$lib/components/navigation/Sidebar.svelte';
   import ThemeProvider from '$lib/components/theme/ThemeProvider.svelte';
   import type { Snippet } from 'svelte';
 
@@ -27,27 +25,39 @@
   let isAuthenticated = $state(false);
   let currentUser = $state<User | null>(null);
   
+  // Track dark mode state
+  let darkMode = $state(false);
+  
   // Initialize user from page data
   $effect(() => {
     const pageData = $page.data as PageData;
-    if (pageData?.user) {
-      currentUser = pageData.user;
+    console.log('Page data updated:', pageData);
+    
+    // Get user from page data or session
+    const userData = pageData?.user || pageData?.session?.user;
+    
+    if (userData) {
+      console.log('User data found in page data:', userData);
+      currentUser = userData;
       isAuthenticated = true;
-    } else if (pageData?.session?.user) {
-      currentUser = pageData.session.user;
-      isAuthenticated = true;
+      
+      // Store user in window for client-side hydration
+      if (typeof window !== 'undefined') {
+        (window as any).__user__ = userData;
+      }
     } else {
+      console.log('No user data found in page data, checking session...');
       currentUser = null;
       isAuthenticated = false;
-    }
-  });
-  
-  // Update state when page changes
-  $effect(() => {
-    currentPath = $page.url.pathname;
-    const pageData = $page.data as PageData;
-    if (pageData?.user) {
-      currentUser = pageData.user;
+      
+      // Only redirect if we're not already on the sign-in page
+      if (typeof window !== 'undefined' && 
+          !window.location.pathname.includes('signin') && 
+          !window.location.pathname.includes('auth')) {
+        const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+        console.log('Redirecting to sign-in from effect');
+        window.location.href = `/auth/signin?callbackUrl=${callbackUrl}`;
+      }
     }
   });
   
@@ -55,16 +65,18 @@
   $effect(() => {
     if (typeof window === 'undefined') return; // Skip on server-side
     
-    const currentPath = window.location.pathname;
+    console.log('Auth state changed - isAuthenticated:', isAuthenticated, 'path:', window.location.pathname);
     
     if (!isAuthenticated) {
       // Only redirect if we're not already on the sign-in page
-      if (!currentPath.startsWith('/auth/signin')) {
-        const callbackUrl = encodeURIComponent(currentPath + window.location.search);
+      if (!window.location.pathname.includes('signin') && 
+          !window.location.pathname.includes('auth')) {
+        const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
         console.log('Not authenticated, redirecting to sign-in');
         window.location.href = `/auth/signin?callbackUrl=${callbackUrl}`;
       }
-    } else if (currentPath === '/auth/signin' || currentPath === '/auth/signin/') {
+    } else if (window.location.pathname === '/auth/signin' || 
+               window.location.pathname === '/auth/signin/') {
       // If already authenticated and on sign-in page, redirect to dashboard
       console.log('Already authenticated, redirecting to dashboard');
       const urlParams = new URLSearchParams(window.location.search);
@@ -76,6 +88,7 @@
   // Check authentication status on mount
   onMount(async () => {
     try {
+      console.log('Checking auth status on mount...');
       const response = await fetch('/api/auth/session', {
         credentials: 'include',
         headers: {
@@ -86,21 +99,32 @@
       
       if (response.ok) {
         const data = await response.json();
+        console.log('Session check response:', data);
+        
         if (data?.user) {
-          user = data.user;
+          currentUser = data.user;
           isAuthenticated = true;
+          
+          // Store user in window for client-side hydration
+          if (typeof window !== 'undefined') {
+            (window as any).__user__ = data.user;
+          }
         } else {
-          user = null;
+          console.log('No user in session response');
+          currentUser = null;
           isAuthenticated = false;
         }
       } else {
-        user = null;
+        console.log('Session check failed with status:', response.status);
+        currentUser = null;
         isAuthenticated = false;
       }
     } catch (err) {
       console.error('Error checking auth status:', err);
-      user = null;
+      currentUser = null;
       isAuthenticated = false;
+    } finally {
+      isCheckingAuth = false;
     }
   });
   
@@ -141,37 +165,26 @@
 </script>
 
 <div class="min-h-screen bg-background">
-  <ThemeProvider>
-    <div class="flex h-screen overflow-hidden">
-      <!-- Sidebar -->
-      <Sidebar />
-      
-      <!-- Main content area -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Top navigation -->
-        <MainNav />
-        
-        <!-- Page content -->
-        <main class="flex-1 overflow-y-auto" aria-label="Main content">
-          <div class="container mx-auto p-4">
-            {#if isAuthenticated && currentUser}
-              {@render children()}
-            {:else}
-              <div class="flex items-center justify-center h-64">
-                <div class="text-center">
-                  <h2 class="text-2xl font-bold mb-4">Please sign in to continue</h2>
-                  <a
-                    href="/auth/signin?callbackUrl={$page.url.pathname}"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-                  >
-                    Sign In
-                  </a>
-                </div>
-              </div>
-            {/if}
+  <div class="flex flex-col min-h-screen">
+    <!-- Page content -->
+    <main class="flex-1 overflow-y-auto" aria-label="Main content">
+      <div class="container mx-auto p-4">
+        {#if isAuthenticated && currentUser}
+          {@render children()}
+        {:else}
+          <div class="flex items-center justify-center h-64">
+            <div class="text-center">
+              <h2 class="text-2xl font-bold mb-4">Please sign in to continue</h2>
+              <a
+                href="/auth/signin?callbackUrl={$page.url.pathname}"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              >
+                Sign In
+              </a>
+            </div>
           </div>
-        </main>
+        {/if}
       </div>
-    </div>
-  </ThemeProvider>
+    </main>
+  </div>
 </div>

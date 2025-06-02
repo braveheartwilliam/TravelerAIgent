@@ -41,59 +41,83 @@ export const load: ServerLoad = async ({ locals, url }: { locals: App.Locals; ur
 };
 
 export const actions = {
-  default: async ({ request }: { request: Request }) => {
+  default: async ({ request, fetch }: { request: Request, fetch: typeof globalThis.fetch }) => {
     const form = await superValidate(request, zod(loginSchema));
 
     if (!form.valid) {
       return message(form, 'Please check your input and try again', { status: 400 });
     }
 
-    try {
-      const response = await fetch('/api/auth/callback/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.data.email,
-          password: form.data.password,
-          redirect: false,
-          callbackUrl: form.data.callbackUrl || '/dashboard'
-        })
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        const errorMessage = data?.message || 'Authentication failed';
-        return message(form, errorMessage, { status: 400 });
-      }
-
-      // Get the callback URL from the response or use the default
-      let callbackUrl = form.data.callbackUrl || '/dashboard';
-      
-      try {
-        if (data?.url) {
-          const url = new URL(data.url);
-          const urlCallback = url.searchParams.get('callbackUrl');
-          if (urlCallback) {
-            callbackUrl = urlCallback;
-          }
-        }
-      } catch (e) {
-        console.error('Error parsing callback URL:', e);
-      }
-
-      // Return success response with redirect URL
+    // Authentication process - separate from redirect logic
+    const authResult = await authenticateUser(form.data, fetch);
+    
+    if (authResult.success) {
+      // Return success with form data - this will be processed by SuperForms
       return {
+        form,
         success: true,
-        redirect: callbackUrl
+        redirectTo: authResult.redirectUrl
       };
-    } catch (error) {
-      console.error('Authentication error:', error);
-      return message(
-        form, 
-        'An error occurred during authentication. Please try again.', 
-        { status: 400 }
-      );
+    } else {
+      // Return error message
+      return message(form, authResult.errorMessage || 'Authentication failed', { status: 400 });
     }
   }
 } satisfies Actions;
+
+// Helper function to handle authentication
+async function authenticateUser(formData: any, fetch: typeof globalThis.fetch) {
+  try {
+    // Use better-auth API for authentication as per memory guidance
+    const response = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        email: formData.email,
+        password: formData.password,
+        remember: formData.remember || false,
+        callbackUrl: formData.callbackUrl || '/__protected__/dashboard'
+      })
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return {
+        success: false,
+        errorMessage: data?.message || 'Authentication failed'
+      };
+    }
+
+    // Get the callback URL from the response or use the default
+    let redirectUrl = formData.callbackUrl || '/__protected__/dashboard';
+    
+    try {
+      if (data?.url) {
+        const url = new URL(data.url);
+        const urlCallback = url.searchParams.get('callbackUrl');
+        if (urlCallback) {
+          redirectUrl = urlCallback;
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing callback URL:', e);
+    }
+    
+    // Return success result
+    return {
+      success: true,
+      redirectUrl
+    };
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    return {
+      success: false,
+      errorMessage: 'An error occurred during authentication. Please try again.'
+    };
+  }
+}

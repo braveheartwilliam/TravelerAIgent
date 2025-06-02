@@ -3,9 +3,18 @@
   import { appStore } from '$lib/stores/app';
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
+  import type { ComponentProps, ComponentType, SvelteComponent } from 'svelte';
   
-  // Get the current theme from the store
-  let { theme } = $props<{ theme?: 'light' | 'dark' | 'system' }>();
+  // Get the current theme from the store and children content
+  let { theme, children } = $props<{ 
+    theme?: 'light' | 'dark' | 'system',
+    children: {
+      default: {
+        component: ComponentType<SvelteComponent>,
+        props: Record<string, any>
+      }
+    }
+  }>();
   
   // Initialize theme
   onMount(() => {
@@ -20,6 +29,9 @@
       
       return () => unsubscribe();
     }
+    
+    // Return empty function for non-browser environment
+    return () => {};
   });
   
   // Apply theme to the document
@@ -40,4 +52,9 @@
   }
 </script>
 
-<slot />
+<!-- Render children using Svelte 5 syntax -->
+<div>
+  {#if children?.default?.component}
+    {@render children.default.component(children.default.props)}
+  {/if}
+</div>

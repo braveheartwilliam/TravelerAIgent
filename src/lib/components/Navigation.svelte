@@ -3,6 +3,9 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   
+  // Define component props
+  export let darkMode: boolean = false;
+  
   // Define the user role type for better type safety
   type UserRole = 'user' | 'admin' | 'super_admin';
   
@@ -36,6 +39,15 @@
     return () => window.removeEventListener('scroll', handleScroll);
   });
 
+  // Event dispatcher for dark mode toggle
+  import { createEventDispatcher } from 'svelte';
+  const dispatch = createEventDispatcher();
+  
+  function toggleDarkMode() {
+    darkMode = !darkMode;
+    dispatch('darkModeToggle', { darkMode });
+  }
+  
   async function handleSignOut() {
     try {
       const response = await fetch('/api/auth/signout', { method: 'POST' });
@@ -51,7 +63,7 @@
     <div class="flex justify-between h-16">
       <!-- Logo -->
       <div class="flex-shrink-0 flex items-center">
-        <a href="/dashboard" class="text-2xl font-bold text-indigo-600">TravelSphere</a>
+        <a href="/dashboard" class="text-2xl font-bold text-indigo-600">TravelerAIgent</a>
       </div>
 
       <!-- Desktop Navigation -->
@@ -77,7 +89,7 @@
             class="w-40 md:w-64 px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
           />
           <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-            <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
@@ -138,7 +150,7 @@
         >
           <span class="sr-only">Open main menu</span>
           <svg
-            class="h-6 w-6"
+            class="h-4 w-4"
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"

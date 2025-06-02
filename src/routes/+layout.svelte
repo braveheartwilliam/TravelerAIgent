@@ -3,7 +3,11 @@
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { Toaster, toast } from 'svelte-sonner';
+  import { QueryClientProvider } from '@tanstack/svelte-query';
+  import { queryClient } from '$lib/tanstack';
   import MainNav from '$lib/components/navigation/MainNav.svelte';
+  import { ScrollToTop } from '$lib/components/ui/scroll-to-top';
+  import '$lib/styles/icon-fix.css';
   
   // State for the Footer component
   let Footer = $state<import('svelte').ComponentType | null>(null);
@@ -109,6 +113,7 @@
   <link rel="stylesheet" href="/app.css" />
 </svelte:head>
 
+<QueryClientProvider client={queryClient}>
 <div class="relative min-h-screen bg-background font-sans antialiased">
   {#if $page.status === 500}
     <div class="min-h-screen flex flex-col items-center justify-center p-4">
@@ -135,5 +140,7 @@
     {/if}
     
     <Toaster position="top-right" />
+    <ScrollToTop />
   {/if}
 </div>
+</QueryClientProvider>

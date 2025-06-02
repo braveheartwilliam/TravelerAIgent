@@ -4,7 +4,6 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, loadEnv } from 'vite';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 // Load .env file manually
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -18,6 +17,12 @@ export default defineConfig(({ mode }) => {
   const port = parseInt(env.PORT || '65480', 10);
   
   return {
+    resolve: {
+      alias: {
+        $lib: path.resolve('./src/lib'),
+        $components: path.resolve('./src/lib/components'),
+      }
+    },
     server: {
       port,
       strictPort: true, // Don't try other ports if the specified one is in use

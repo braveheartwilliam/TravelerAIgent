@@ -34,7 +34,7 @@
 </script>
 
 <!-- Main Layout -->
-<div class="min-h-screen flex flex-col bg-gradient-to-br from-blue-900 to-blue-600 bg-cover bg-center" style="background-image: url('/images/world-map-bg.jpg');">
+<div class="min-h-screen flex flex-col bg-gradient-to-br from-blue-900 to-blue-600 bg-cover bg-center" style="background-image: url('/images/world-map-bg.svg');">
   <!-- Navigation -->
   <Navigation />
 

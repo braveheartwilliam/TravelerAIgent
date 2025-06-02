@@ -1,6 +1,14 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { signOut } from '@auth/sveltekit/client';
+  import { toast } from 'svelte-sonner';
+  import { createForm, profileFormSchema } from '$lib/forms/superforms';
+  import { FormField, FormTextarea, FormCheckbox, FormSelect, FormSubmit } from '$lib/components/forms';
+  import ChangePasswordDialog from '$lib/components/profile/ChangePasswordDialog.svelte';
+  import type { z } from 'zod';
+
+  // Dialog open state
+  let showChangePassword = $state(false);
 
   // Define the User type
   interface User {
@@ -13,15 +21,8 @@
     marketingEmails?: boolean;
   }
   
-  // Define form data type
-  interface FormData {
-    name: string;
-    email: string;
-    bio: string;
-    location: string;
-    timezone: string;
-    marketingEmails: boolean;
-  }
+  // Define form data type using our schema
+  type FormData = z.infer<typeof profileFormSchema>;
 
   // User data from session
   let user = $state<User | null>(null);
@@ -32,16 +33,35 @@
   // Get default timezone
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   
-  // Initialize form data with defaults
-  let formData = $state<FormData>({
-    name: '',
-    email: '',
-    bio: 'Travel enthusiast and adventure seeker',
-    location: 'San Francisco, CA',
-    timezone: defaultTimezone,
-    marketingEmails: false
-  });
+  // Available timezones for the select component
+  const timezones = [
+    { value: defaultTimezone, label: defaultTimezone },
+    { value: 'America/New_York', label: 'Eastern Time (ET)' },
+    { value: 'America/Chicago', label: 'Central Time (CT)' },
+    { value: 'America/Denver', label: 'Mountain Time (MT)' },
+    { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' }
+  ];
 
+  // Initialize the form with our utility
+  const { form, errors, enhance, submitting } = createForm({
+    schema: profileFormSchema,
+    validationMode: 'submit',
+    successMessage: 'Profile updated successfully!',
+    errorMessage: 'Failed to update profile. Please try again.',
+    onSuccess: () => {
+      isEditing = false;
+    }
+  });
+  
+  // Loading state for the submit button
+  const isLoading = $derived($submitting);
+  
+  // Helper function to get error message for a field
+  function getError(field: keyof FormData): string {
+    if (!$errors[field]) return '';
+    return Array.isArray($errors[field]) ? $errors[field][0] || '' : '';
+  }
+  
   // Update user when page data changes
   $effect(() => {
     // Type assertion for page data
@@ -61,7 +81,7 @@
       user = updatedUser;
       
       // Update form data with non-null values
-      formData = {
+      $form = {
         name: updatedUser.name ?? '',
         email: updatedUser.email ?? '',
         bio: updatedUser.bio ?? 'Travel enthusiast and adventure seeker',
@@ -77,7 +97,7 @@
     isEditing = !isEditing;
     if (!isEditing && user) {
       // Reset form data when canceling edit
-      formData = {
+      $form = {
         name: user.name ?? '',
         email: user.email ?? '',
         bio: user.bio ?? 'Travel enthusiast and adventure seeker',
@@ -88,45 +108,7 @@
     }
   }
 
-  // Handle form submission
-  function handleSubmit(event: Event) {
-    event.preventDefault();
-    
-    try {
-      // In a real app, this would be an API call
-      if (user) {
-        // Create a new user object with updated values
-        const updatedUser: User = {
-          ...user,
-          name: formData.name || user.name || null,
-          email: formData.email || user.email || null,
-          bio: formData.bio || null,
-          location: formData.location || null,
-          timezone: formData.timezone || defaultTimezone,
-          marketingEmails: formData.marketingEmails ?? false
-        };
-        
-        user = updatedUser;
-      } else {
-        // Create a new user if none exists (shouldn't happen in normal flow)
-        user = { 
-          name: formData.name || null,
-          email: formData.email || null,
-          bio: formData.bio || null,
-          location: formData.location || null,
-          timezone: formData.timezone || defaultTimezone,
-          marketingEmails: formData.marketingEmails ?? false
-        };
-      }
-      
-      console.log('Profile updated:', formData);
-      isEditing = false;
-      alert('Profile updated successfully!');
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      alert('Failed to update profile. Please try again.');
-    }
-  }
+  // Handle form submission - now handled by the form component
 
   // Handle sign out
   function handleSignOut() {
@@ -151,77 +133,75 @@
       <div class="bg-white rounded-lg shadow p-6">
         <h2 class="text-xl font-semibold mb-4">Profile Information</h2>
 
-        <form onsubmit={handleSubmit} class="space-y-4">
-          <div class="space-y-2">
-            <label for="name" class="block text-sm font-medium">Name</label>
-            <input
-              id="name"
-              type="text"
-              bind:value={formData.name}
-              disabled={!isEditing}
-              class="w-full p-2 border rounded"
-            />
-          </div>
+        <form method="POST" use:enhance class="space-y-4">
+          <!-- Name field -->
+          <FormField
+            name="name"
+            label="Name"
+            type="text"
+            bind:value={$form['name'] as string}
+            disabled={!isEditing}
+            error={getError('name')}
+          />
 
-          <div class="space-y-2">
-            <label for="email" class="block text-sm font-medium">Email</label>
-            <input
-              id="email"
-              type="email"
-              bind:value={formData.email}
-              disabled
-              class="w-full p-2 border rounded bg-gray-100"
-            />
-          </div>
+          <!-- Email field (disabled) -->
+          <FormField
+            name="email"
+            label="Email"
+            type="email"
+            bind:value={$form['email'] as string}
+            disabled={true}
+            error={getError('email')}
+          />
 
-          <div class="space-y-2">
-            <label for="bio" class="block text-sm font-medium">Bio</label>
-            <textarea
-              id="bio"
-              bind:value={formData.bio}
-              disabled={!isEditing}
-              class="w-full p-2 border rounded min-h-[100px]"
-              placeholder="Tell us about yourself..."
-            ></textarea>
-          </div>
+          <!-- Bio field -->
+          <FormTextarea
+            name="bio"
+            label="Bio"
+            bind:value={$form['bio'] as string}
+            disabled={!isEditing}
+            placeholder="Tell us about yourself..."
+            error={getError('bio')}
+            rows={4}
+          />
 
-          <div class="space-y-2">
-            <label for="location" class="block text-sm font-medium">Location</label>
-            <input
-              id="location"
-              type="text"
-              bind:value={formData.location}
-              disabled={!isEditing}
-              class="w-full p-2 border rounded"
-            />
-          </div>
+          <!-- Location field -->
+          <FormField
+            name="location"
+            label="Location"
+            type="text"
+            bind:value={$form['location'] as string}
+            disabled={!isEditing}
+            error={getError('location')}
+          />
 
-          <div class="space-y-2">
-            <label for="timezone" class="block text-sm font-medium">Timezone</label>
-            <select
-              id="timezone"
-              bind:value={formData.timezone}
-              disabled={!isEditing}
-              class="w-full p-2 border rounded"
-            >
-              <option value={defaultTimezone}>
-                {defaultTimezone}
-              </option>
-              <option value="America/New_York">Eastern Time (ET)</option>
-              <option value="America/Chicago">Central Time (CT)</option>
-              <option value="America/Denver">Mountain Time (MT)</option>
-              <option value="America/Los_Angeles">Pacific Time (PT)</option>
-            </select>
-          </div>
+          <!-- Timezone field -->
+          <FormSelect
+            name="timezone"
+            label="Timezone"
+            bind:value={$form['timezone'] as string}
+            options={timezones}
+            disabled={!isEditing}
+            error={getError('timezone')}
+          />
+          
+          <!-- Marketing emails checkbox -->
+          <FormCheckbox
+            name="marketingEmails"
+            label="Receive marketing emails"
+            bind:checked={$form['marketingEmails'] as boolean}
+            disabled={!isEditing}
+            error={getError('marketingEmails')}
+          />
 
           <div class="flex space-x-4 pt-4">
-            <button
-              type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Save Changes
-            </button>
             {#if isEditing}
+              <FormSubmit
+                label="Save Changes"
+                variant="primary"
+                size="md"
+                loading={isLoading}
+              />
               <button
                 type="button"
                 onclick={toggleEdit}
@@ -245,7 +225,23 @@
             >
               Sign Out
             </button>
+            <!-- Change Password Button -->
+            <button
+              type="button"
+              class="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200 transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              onclick={() => showChangePassword = true}
+              aria-haspopup="dialog"
+              aria-controls="change-password-dialog"
+            >
+              Change Password
+            </button>
           </div>
+          <!-- Change Password Dialog -->
+          <ChangePasswordDialog
+            bind:open={showChangePassword}
+            onClose={() => (showChangePassword = false)}
+            id="change-password-dialog"
+          />
         </form>
       </div>
     </div>

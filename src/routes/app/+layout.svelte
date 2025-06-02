@@ -4,14 +4,24 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import type { ComponentProps, ComponentType, SvelteComponent } from 'svelte';
   
   console.log('App layout script executing');
   
-  // Get props and session safely
-  const { children } = $props<{ children?: any }>();
+  // Get props including children content
+  let { children } = $props<{
+    children: {
+      default: {
+        component: ComponentType<SvelteComponent>,
+        props: Record<string, any>
+      }
+    }
+  }>();
+  
+  // Get session safely
   const session = $derived($page.data?.session || null);
   const user = $derived(session?.user || null);
-  const error = $derived($page.data?.error || null);
+  const error = $derived($page.data?.['error'] || null);
   
   // Handle authentication state
   let unsubscribe: (() => void) | undefined;
@@ -89,8 +99,16 @@
           </svg>
         </div>
         <div class="ml-3">
-          <p class="text-sm text-red-700">
+          <p class="text-sm text-red-700">{error}</p>
+        </div>
       </div>
-    {/if}
+    </div>
+  {/if}
+  
+  <div class="container mx-auto px-4 py-8">
+    <Header />
+    <div>
+      {@render children.default.component(children.default.props)}
+    </div>
   </div>
 </main>

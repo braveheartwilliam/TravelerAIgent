@@ -1,387 +1,236 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
-  import { Card, CardContent, CardTitle } from '$lib/components/ui/card';
-  import { Button } from '$lib/components/ui/button';
-  import { Calendar, Plane, AlertCircle, RefreshCw, DollarSign, Plus } from 'lucide-svelte';
-  import { goto } from '$app/navigation';
-  import type { PageData } from './$types';
-  import type { Trip as DBTrip } from '$lib/server/schema';
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import Breadcrumbs from '$lib/components/dashboard/Breadcrumbs.svelte';
+  import FeatureCard from '$lib/components/dashboard/FeatureCard.svelte';
+  import ActionButton from '$lib/components/dashboard/ActionButton.svelte';
+  import GuidedCreation from '$lib/components/dashboard/GuidedCreation.svelte';
+  import LoadingSkeleton from '$lib/components/dashboard/LoadingSkeleton.svelte';
+  import Footer from '$lib/components/dashboard/Footer.svelte';
+  import './dashboard.css';
   
-  // Navigation helper
-  function navigateTo(path: string) {
-    goto(path);
-  }
-  
-  // Handle button clicks
-  function handleButtonClick(action: string, tripId?: string) {
-    switch (action) {
-      case 'createTrip':
-        navigateTo('/trips/new');
-        break;
-      case 'explore':
-        navigateTo('/explore');
-        break;
-      case 'viewTripDetails':
-        if (tripId) {
-          navigateTo(`/trips/${tripId}`);
-        }
-        break;
-      default:
-        console.warn(`Unknown action: ${action}`);
-    }
-  }
-
-  // Define the User interface to match our database schema
-  interface User {
-    id: number;
-    userName: string;
-    email: string;
-    fullName?: string | null;
-    role: 'user' | 'admin' | null;
-    is_active: boolean | null;
-    createdAt: string;
-    updatedAt: string;
-  }
-
-  // Define the Trip interface to match our database schema
-  interface Trip {
-    id: number;
-    user_id: number;
-    destination: string;
-    description?: string | null;
-    start_date: string | Date;
-    end_date: string | Date;
-    budget?: string | null;
-    status: 'planned' | 'in_progress' | 'completed' | 'cancelled';
-    created_at: string | Date;
-    updated_at: string | Date;
-  }
-
-  // Get page data using $props() in Svelte 5
-  const { data } = $props<{ data: PageData }>();
-  
-  // Debug log the incoming data
-  $effect(() => {
-    try {
-      if (data) {
-        const getCircularReplacer = () => {
-          const seen = new WeakSet();
-          return (key: string, value: any) => {
-            if (typeof value === 'object' && value !== null) {
-              if (seen.has(value)) {
-                return '[Circular]';
-              }
-              seen.add(value);
-            }
-            return value;
-          };
-        };
-        
-        console.log('Page data received:', JSON.parse(JSON.stringify(data, getCircularReplacer())));
-      } else {
-        console.log('No page data received');
-      }
-    } catch (err) {
-      console.error('Error logging page data:', err);
-    }
-  });
-  
-  // State management with $state
-  let userData = $state<User | null>(null);
-  let userTrips = $state<Trip[]>([]);
+  // State for UI elements
+  let darkMode = $state(false);
   let isLoading = $state(true);
-  let error = $state<string | null>(null);
-
-  // Initialize state when data is available
-  $effect(() => {
-    if (!data) {
-      console.error('No data received from server');
-      error = 'No data received from server';
-      isLoading = false;
-      return;
+  let showNotification = $state(false);
+  
+  // Feature data
+  const features = [
+    {
+      title: 'Travel Plans',
+      description: 'Create and manage your travel plans with ease.'
+    },
+    {
+      title: 'Travel Memories',
+      description: 'Share your travel memories with others.'
+    },
+    {
+      title: 'Traveler Advisor',
+      description: 'Get personalized travel advice based on your travel plans.'
+    },
+    {
+      title: 'Stories',
+      description: 'Read and write stories about your travel experiences.'
     }
-
-    console.log('Initializing with data:', data);
+  ];
+  
+  // Action buttons data
+  const createTripIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+  </svg>`;
+  
+  const createMemoryIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>`;
+  
+  // Breadcrumbs data
+  const breadcrumbs = [
+    { name: 'Home', href: '/dashboard' },
+  ];
+  
+  // Initialize dark mode preference and load data
+  onMount(() => {
+    if (typeof window === 'undefined') return;
     
     try {
-      // Validate user data
-      if (!data.user || typeof data.user !== 'object') {
-        throw new Error('Invalid user data received');
+      // Initialize dark mode
+      const savedMode = localStorage.getItem('darkMode');
+      if (savedMode !== null) {
+        darkMode = savedMode === 'true';
+        document.documentElement.classList.toggle('dark', darkMode);
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        darkMode = true;
+        document.documentElement.classList.add('dark');
       }
       
-      // Ensure required fields are present
-      if (!data.user.id || !data.user.email) {
-        throw new Error('Incomplete user data received');
-      }
+      // Simulate loading data
+      setTimeout(() => {
+        isLoading = false;
+        
+        // Show notification after content loads
+        setTimeout(() => {
+          showNotification = true;
+        }, 2000);
+      }, 1000);
       
-      userData = {
-        id: Number(data.user.id),
-        email: data.user.email || '',
-        userName: data.user.userName || data.user.email.split('@')[0],
-        fullName: data.user.fullName || null,
-        role: (data.user.role === 'admin' ? 'admin' : 'user') as 'user' | 'admin' | null,
-        is_active: Boolean(data.user.is_active),
-        createdAt: data.user.createdAt || new Date().toISOString(),
-        updatedAt: data.user.updatedAt || new Date().toISOString()
-      };
-      
-      // Validate and set trips
-      userTrips = Array.isArray(data.trips) 
-        ? data.trips.map((trip: DBTrip) => ({
-            ...trip,
-            start_date: new Date(trip.start_date),
-            end_date: new Date(trip.end_date),
-            created_at: new Date(trip.created_at || new Date()),
-            updated_at: new Date(trip.updated_at || new Date()),
-            // Add any other required fields with default values
-            id: trip.id || 0,
-            user_id: trip.user_id || 0,
-            destination: trip.destination || '',
-            description: trip.description || null,
-            budget: trip.budget || null,
-            status: trip.status || 'planned'
-          }))
-        : [];
-      
-      isLoading = false;
-      error = null;
-      
-    } catch (err) {
-      console.error('Error initializing dashboard data:', err);
-      error = err instanceof Error ? err.message : 'Failed to load dashboard data';
-      isLoading = false;
+    } catch (error) {
+      console.error('Error initializing dashboard:', error);
     }
   });
   
-  // Computed values
-  const hasUserData = $derived(Boolean(userData && userData.id));
-  const hasTrips = $derived(userTrips.length > 0);
+  // Dark mode is now handled by the layout
   
-  // Format date for display
-  function formatDate(dateString?: string | Date | null): string {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return isNaN(date.getTime()) 
-      ? 'Invalid date' 
-      : date.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        });
+  function handleGuidedCreation() {
+    console.log('Guided creation started');
+    // Will implement guided creation modal
   }
   
-  // Format currency
-  function formatCurrency(amount?: string | null): string {
-    if (!amount) return '$0.00';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(Number(amount));
+  function dismissNotification() {
+    showNotification = false;
   }
-  
-  // Get user's display name
-  function getDisplayName(user: User): string {
-    return user.fullName || user.userName || 'Traveler';
-  }
-  
-  // Initialize component
-  onMount(() => {
-    try {
-      console.log('Dashboard mounted with data:', { userData, userTrips });
-    } catch (err) {
-      console.error('Error in dashboard onMount:', err);
-      error = 'Failed to initialize dashboard';
-    } finally {
-      isLoading = false;
-    }
-  });
 </script>
 
-<main class="container mx-auto px-4 py-8">
-  {#if !hasUserData}
-    <div class="text-center py-16">
-      <AlertCircle class="mx-auto h-12 w-12 text-yellow-500 mb-4" />
-      <h3 class="text-2xl font-bold mb-2">Welcome to TravelerAIgent</h3>
-      <p class="text-muted-foreground max-w-2xl mx-auto mb-6">
-        We're having trouble loading your dashboard. Please sign in to continue planning your next adventure.
-      </p>
-      <div class="flex gap-4 justify-center">
-        <Button on:click={() => navigateTo('/auth/signin')}>
-          Sign In
-        </Button>
-        <Button on:click={() => window.location.reload()} variant="outline">
-          <RefreshCw class="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
-    </div>
-  {:else if isLoading}
-    <div class="flex flex-col items-center justify-center h-64 space-y-4">
-      <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-      <p class="text-muted-foreground">Loading your dashboard...</p>
-    </div>
-  {:else if error}
-    <div class="text-center py-12">
-      <AlertCircle class="mx-auto h-12 w-12 text-red-500 mb-4" />
-      <h3 class="text-lg font-medium mb-2">Error Loading Dashboard</h3>
-      <p class="text-muted-foreground mb-4">{error}</p>
-      <Button onclick={() => window.location.reload()} variant="outline">
-        <RefreshCw class="mr-2 h-4 w-4" />
-        Try Again
-      </Button>
-    </div>
-  {:else if userData}
-    <div class="space-y-8">
-      <!-- Welcome Section -->
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 class="text-3xl font-bold tracking-tight">
-            Welcome back, {getDisplayName(userData)}!
-          </h1>
-          <p class="text-muted-foreground">
-            Here's what's happening with your trips.
-          </p>
-        </div>
-        <Button on:click={() => navigateTo('/trips/new')}>
-          <Plus class="mr-2 h-4 w-4" />
-          New Trip
-        </Button>
-      </div>
+<!-- Main Content -->
+<main class="min-h-screen bg-gradient-to-b from-blue-900 to-indigo-900 text-white dashboard-container" aria-labelledby="main-heading">
+  <div class="pt-16 pb-12">
+    <!-- Top Breadcrumbs -->
+    <Breadcrumbs crumbs={breadcrumbs} />
 
-      <!-- Upcoming Trips -->
-      <div class="mt-8">
-        <h2 class="text-2xl font-semibold mb-6">Upcoming Trips</h2>
-        {#if !hasTrips}
-          <Card>
-            <CardContent class="p-8 text-center">
-              <Plane class="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 class="text-lg font-medium mb-2">No upcoming trips</h3>
-              <p class="text-muted-foreground mb-4">
-                You don't have any trips planned yet. Start by creating a new trip!
-              </p>
-              <Button on:click={() => navigateTo('/trips/new')}>
-                <Plus class="mr-2 h-4 w-4" />
-                Create Trip
-              </Button>
-            </CardContent>
-          </Card>
-        {:else}
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {#each userTrips as trip}
-              <Card class="hover:shadow-md transition-shadow">
-                <CardContent class="p-6">
-                  <div class="flex justify-between items-start mb-4">
-                    <h3 class="text-lg font-semibold">{trip.destination}</h3>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {trip.status?.replace('_', ' ').toUpperCase() || 'PLANNED'}
-                    </span>
-                  </div>
-                  
-                  <div class="space-y-3 text-sm">
-                    <div class="flex items-center text-muted-foreground">
-                      <Calendar class="mr-2 h-4 w-4" />
-                      <span>
-                        {formatDate(trip.start_date)} - {formatDate(trip.end_date)}
-                      </span>
-                    </div>
-                    
-                    {#if trip.budget}
-                      <div class="flex items-center text-muted-foreground">
-                        <DollarSign class="mr-2 h-4 w-4" />
-                        <span>{formatCurrency(trip.budget)}</span>
-                      </div>
-                    {/if}
-                    
-                    {#if trip.description}
-                      <p class="mt-2 text-muted-foreground line-clamp-2">
-                        {trip.description}
-                      </p>
-                    {/if}
-                  </div>
-                  
-                  <div class="mt-4 pt-4 border-t border-gray-100">
-                    <Button 
-                      variant="outline" 
-                      className="w-full"
-                      on:click={() => handleButtonClick('viewTripDetails', trip.id.toString())}
-                    >
-                      View Details
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+    <!-- Main Content Area -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {#if isLoading}
+        <!-- Skeleton Loading State -->
+        <LoadingSkeleton />
+      {:else}
+        <!-- Main Heading -->
+        <div 
+          class="text-center py-12" 
+          in:fly={{ y: 20, duration: 600, delay: 100, easing: cubicOut }}
+        >
+          <h1 id="main-heading" class="text-5xl font-extrabold text-white mb-6 leading-tight tracking-tight">
+            <span class="block text-blue-200 text-shadow">Your Travel Plans and</span>
+            <span class="block text-white text-shadow">Travel Memories</span>
+            <span class="block text-2xl font-normal text-blue-100 mt-4">All in One Place</span>
+          </h1>
+        </div>
+
+        <!-- Features Description -->
+        <div 
+          class="max-w-3xl mx-auto text-center mb-16" 
+          in:fly={{ y: 20, duration: 600, delay: 300, easing: cubicOut }}
+        >
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-blue-100">
+            {#each features as feature, i}
+              <div in:fly={{ y: 20, duration: 400, delay: 400 + (i * 100), easing: cubicOut }}>
+                <FeatureCard title={feature.title} description={feature.description} />
+              </div>
             {/each}
           </div>
-        {/if}
-      </div>
+        </div>
 
-      <!-- Recent Activity -->
-      <div class="mt-12">
-        <h2 class="text-2xl font-semibold mb-6">Recent Activity</h2>
-        <Card>
-          <CardContent class="p-6">
-            {#if hasTrips}
-              <div class="space-y-4">
-                {#each userTrips.slice(0, 3) as trip}
-                  <div class="flex items-start pb-4 border-b border-gray-100 last:border-0 last:pb-0">
-                    <div class="flex-shrink-0 h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Plane class="h-5 w-5 text-primary" />
-                    </div>
-                    <div class="ml-4">
-                      <p class="text-sm font-medium">
-                        Added trip to {trip.destination}
-                      </p>
-                      <p class="text-xs text-muted-foreground">
-                        {formatDate(trip.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="text-center py-8">
-                <p class="text-muted-foreground">No recent activity to show</p>
-              </div>
-            {/if}
-          </CardContent>
-        </Card>
-      </div>
+        <!-- Action Buttons -->
+        <div 
+          class="flex flex-col sm:flex-row justify-center gap-6 mb-16 max-w-2xl mx-auto"
+          in:fly={{ y: 20, duration: 600, delay: 800, easing: cubicOut }}
+        >
+          <ActionButton 
+            href="/trips/new" 
+            label="Create Trip" 
+            icon={createTripIcon} 
+            variant="primary" 
+          />
+          <ActionButton 
+            href="/memories/new" 
+            label="Create Memory" 
+            icon={createMemoryIcon} 
+            variant="secondary" 
+          />
+        </div>
+
+        <!-- Guided Creation Section -->
+        <div in:fly={{ y: 20, duration: 600, delay: 1000, easing: cubicOut }}>
+          <GuidedCreation {handleGuidedCreation} />
+        </div>
+      {/if}
     </div>
-  {/if}
+    
+    <!-- Bottom Breadcrumbs -->
+    <div class="mt-12">
+      <Breadcrumbs crumbs={breadcrumbs} centered={true} />
+    </div>
+  </div>
 </main>
 
+<!-- Footer -->
+<Footer />
+
+<!-- Notification -->
+{#if showNotification}
+  <div 
+    class="fixed bottom-6 right-6 z-50 max-w-sm"
+    in:fly={{ x: 20, y: 20, duration: 400, easing: cubicOut }}
+    out:fade={{ duration: 300 }}
+  >
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-blue-500">
+      <div class="p-4">
+        <div class="flex items-start">
+          <div class="flex-shrink-0 text-blue-500">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="ml-3 w-0 flex-1">
+            <p class="text-sm font-medium text-gray-900 dark:text-white">Welcome to TravelerAIgent</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-300">Start by creating your first trip or memory.</p>
+          </div>
+          <div class="ml-4 flex-shrink-0 flex">
+            <button
+              type="button"
+              class="rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              onclick={dismissNotification}
+              aria-label="Dismiss notification"
+            >
+              <span class="sr-only">Close</span>
+              <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .container {
-    max-width: 1200px;
-    margin: 0 auto;
+  /* Custom styles for better readability */
+  :global(body) {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    line-height: 1.6;
+    color-scheme: light dark;
   }
   
-  /* Ensure line clamping works in all browsers */
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    line-clamp: 2;
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
   
-  /* Animation for the loading spinner */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+  /* Improve contrast for better readability */
+  :global(.text-blue-100) {
+    color: rgba(219, 234, 254, 0.95) !important;
   }
   
-  .animate-spin {
-    animation: spin 1s linear infinite;
+  :global(.bg-white\/5) {
+    background-color: rgba(255, 255, 255, 0.08);
   }
   
-  /* Responsive padding */
-  @media (max-width: 768px) {
-    .container {
-      padding-left: 1rem;
-      padding-right: 1rem;
-    }
+  :global(.bg-white\/10) {
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+  
+  /* Improve button readability */
+  :global(button, a) {
+    font-weight: 500;
+    letter-spacing: 0.01em;
   }
 </style>

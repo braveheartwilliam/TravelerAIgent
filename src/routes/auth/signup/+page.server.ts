@@ -89,10 +89,19 @@ export const actions: Actions = {
         });
       }
       
-      const { email, userName, fullName, password } = form.data as UserData;
-      
+      let { email, userName, fullName, password } = form.data as UserData;
+      // Ensure fullName (display name) is always set
+      if (!fullName || fullName.trim() === '') {
+        if (userName && userName.trim() !== '') {
+          fullName = userName;
+        } else if (email && email.includes('@')) {
+          fullName = email.split('@')[0];
+        } else {
+          fullName = 'Traveler';
+        }
+      }
       // Check if user already exists
-      debugLog('Checking for existing user', { email, userName });
+      debugLog('Checking for existing user', { email, userName, fullName });
       const existingUser = await db.query.users.findFirst({
         where: or(
           eq(users.email, email),

@@ -1,0 +1,27 @@
+/* Dashboard icon styles - more aggressive targeting */
+.dashboard-container svg,
+.dashboard-container svg[data-lucide],
+[data-lucide],
+svelte\:component,
+svelte\:component[this] svg {
+  width: 16px !important;
+  height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+}
+
+/* Target all SVG icons in the dashboard */
+svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Force all icons to be properly sized */
+.lucide,
+.lucide-icon,
+.icon {
+  width: 16px !important;
+  height: 16px !important;
+}

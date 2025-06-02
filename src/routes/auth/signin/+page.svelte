@@ -1,20 +1,73 @@
 <script lang="ts">
   import { toast } from 'svelte-sonner';
-  import { Loader2, Mail } from 'lucide-svelte';
+  import { Loader2 } from 'lucide-svelte';
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
-  import { SESSION_COOKIE_NAME } from '$lib/constants';
-  import { goto } from '$app/navigation';
+  import { createForm, loginFormSchema } from '$lib/forms/superforms';
+  import { FormField, FormCheckbox, FormSubmit } from '$lib/components/forms';
+  import type { z } from 'zod';
+
+  // Define PageData type based on the server response structure
+  interface PageData {
+    form: {
+      data: {
+        email: string;
+        password: string;
+        remember: boolean;
+      }
+    };
+    error?: string;
+  }
+
+  // Define the form data type based on the schema
+  type FormData = z.infer<typeof loginFormSchema>;
+
+  // Get page data from props
+  const { data } = $props<{ data: PageData }>();
   
-  // Form state
-  let email = '';
-  let isAuthenticated = false;
-  let isCheckingAuth = true;
-  let password = '';
-  let rememberMe = false;
-  let isLoading = false;
-  let error = '';
-  let callbackUrl = '/';
+  // State variables
+  let isCheckingAuth = $state(true);
+  let isAuthenticated = $state(false);
+  let callbackUrl = $state('/');
+  
+  // Create form with our utility and schema
+  // Define a custom type for the server response that includes success and redirectTo properties
+  type AuthResponse = FormData & {
+    success?: boolean;
+    redirectTo?: string;
+  };
+
+  const { form, errors, enhance, submitting } = createForm({
+    schema: loginFormSchema,
+    data: data.form,
+    successMessage: 'Signed in successfully!',
+    errorMessage: 'Failed to sign in. Please check your credentials.',
+    onSuccess: (result: AuthResponse) => {
+      // Handle successful authentication and redirect
+      if (result.success && result.redirectTo) {
+        // Use a short timeout to allow the toast to show before redirecting
+        setTimeout(() => {
+          window.location.href = result.redirectTo || '/__protected__/dashboard';
+        }, 300);
+      }
+    },
+    validationMode: 'submit'
+  });
+  
+  // Initialize form with default values using onMount to prevent reactivity loops
+  onMount(() => {
+    $form.email = $form.email || '';
+    $form.password = $form.password || '';
+    $form.remember = $form.remember ?? false;
+  });
+  
+  // Loading state for the submit button
+  const isLoading = $derived($submitting);
+  
+  // Helper function to get error message for a field
+  function getError(field: keyof FormData): string {
+    if (!$errors[field]) return '';
+    return Array.isArray($errors[field]) ? $errors[field][0] || '' : '';
+  }
   
   // Check authentication status and handle redirects
   async function checkAuth() {
@@ -22,53 +75,44 @@
     if (typeof window === 'undefined') return false;
     
     try {
-      console.log('Checking authentication status...');
       const response = await fetch('/api/auth/session', {
         method: 'GET',
         credentials: 'include',
         headers: {
           'Accept': 'application/json',
-          'Cache-Control': 'no-cache',
-          'X-Requested-With': 'XMLHttpRequest'
+          'Cache-Control': 'no-cache'
         }
       });
       
-      console.log('Auth check response status:', response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('Auth check response data:', data);
         
         if (data?.user) {
           isAuthenticated = true;
           // Get the callback URL from the query parameters
           const urlParams = new URLSearchParams(window.location.search);
-          let redirectTo = urlParams.get('redirectTo') || urlParams.get('callbackUrl');
+          let redirectTo = urlParams.get('callbackUrl') || '/';
           
           // Ensure the redirect URL is safe and relative
-          if (!redirectTo || !redirectTo.startsWith('/')) {
-            redirectTo = '/__protected__/dashboard';
-          } else {
-            // Basic validation to prevent open redirects
+          if (redirectTo && redirectTo.startsWith('/')) {
             try {
               const url = new URL(redirectTo, window.location.origin);
-              if (url.origin !== window.location.origin) {
-                console.warn('Invalid redirect URL, using default');
-                redirectTo = '/__protected__/dashboard';
+              if (url.origin === window.location.origin) {
+                // Use a small delay to ensure any UI updates are processed
+                setTimeout(() => {
+                  window.location.href = redirectTo;
+                }, 100);
+                return true;
               }
             } catch (e) {
-              console.warn('Invalid redirect URL, using default:', e);
-              redirectTo = '/__protected__/dashboard';
+              console.error('Invalid redirect URL:', e);
             }
           }
           
-          console.log('User is authenticated, redirecting to:', redirectTo);
-          
-          // Use a small delay to ensure any UI updates are processed
+          // Default redirect
           setTimeout(() => {
-            window.location.href = redirectTo;
+            window.location.href = '/';
           }, 100);
-          
           return true;
         }
       }
@@ -81,186 +125,48 @@
     }
   }
 
-  // Get callback URL from query params and check auth status
+  // Handle page initialization
   onMount(async () => {
+    // Get callback URL from query params
     const urlParams = new URLSearchParams(window.location.search);
     const redirectUrl = urlParams.get('callbackUrl') || urlParams.get('from');
     
-    if (redirectUrl) {
-      // Ensure the redirect URL is safe and relative
-      try {
-        const url = new URL(redirectUrl, window.location.origin);
-        if (url.origin === window.location.origin) {
-          callbackUrl = redirectUrl;
-        }
-      } catch (e) {
-        console.warn('Invalid redirect URL, using default');
-      }
+    if (redirectUrl && redirectUrl.startsWith('/')) {
+      callbackUrl = redirectUrl;
     }
-    
+
     // Check if user is already authenticated
     const isAuthed = await checkAuth();
     if (isAuthed) return;
-    
-      // Show success/error messages from URL parameters
-    const errorParam = urlParams.get('error');
-    const messageParam = urlParams.get('message');
-    
-    // Handle success messages
-    if (messageParam === 'signed_out') {
+
+    // Show messages from URL parameters
+    if (urlParams.get('message') === 'signed_out') {
       toast.success('You have been successfully signed out');
     }
-    
-    // Handle error messages
+
+    // Show error message if present in URL
+    const errorParam = urlParams.get('error');
     if (errorParam) {
-      switch (errorParam) {
-        case 'invalid_credentials':
-          error = 'Invalid email or password';
-          break;
-        case 'session_expired':
-          error = 'Your session has expired. Please sign in again.';
-          break;
-        case 'invalid_session':
-          error = 'Invalid session. Please sign in again.';
-          break;
-        case 'account_deactivated':
-          error = 'Your account has been deactivated. Please contact support.';
-          break;
-        case 'sign_out_failed':
-          error = 'Failed to sign out. Please try again.';
-          break;
-        case 'session_error':
-        default:
-          error = 'An error occurred with your session. Please sign in again.';
-      }
-      
-      if (error) {
-        toast.error(error);
-      }
-    } else {
-      isCheckingAuth = false;
-    }
-  });
-  
-  // Handle form submission
-  async function handleSubmit(event: Event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    // Reset state
-    error = '';
-    isLoading = true;
-    isCheckingAuth = true;
-    
-    try {
-      // Basic validation
-      if (!email || !password) {
-        throw new Error('Please fill in all fields');
-      }
-      
-      // Email format validation
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Please enter a valid email address');
-      }
-      
-      console.log('Sending sign-in request...');
-      
-      // Get the callback URL from query params or use default
-      const urlParams = new URLSearchParams(window.location.search);
-      const redirectTo = urlParams.get('redirectTo') || urlParams.get('callbackUrl') || '/__protected__/dashboard';
-      
-      // Ensure the redirect URL is safe and relative
-      let safeRedirectTo = '/__protected__/dashboard';
-      try {
-        if (redirectTo.startsWith('/')) {
-          const url = new URL(redirectTo, window.location.origin);
-          if (url.origin === window.location.origin) {
-            safeRedirectTo = redirectTo;
-          }
-        }
-      } catch (e) {
-        console.warn('Invalid redirect URL, using default:', e);
-      }
-      
-      // Prepare the request data
-      const requestData = {
-        email: email.toLowerCase().trim(),
-        password: password,
-        remember: rememberMe,
-        callbackUrl: safeRedirectTo
+      const errorMessages: Record<string, string> = {
+        'invalid_credentials': 'Invalid email or password',
+        'session_expired': 'Your session has expired. Please sign in again.',
+        'invalid_session': 'Your session is invalid. Please sign in again.',
+        'account_locked': 'Your account has been locked. Please contact support.',
+        'account_not_verified': 'Please verify your email address before signing in.'
       };
       
-      // Submit the form with JSON data to the correct better-auth endpoint
-      const response = await fetch('/api/auth/signin', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-          remember: rememberMe
-        })
-      });
+      const errorMessage = errorMessages[errorParam] || 
+        'An error occurred during sign in. Please try again.';
       
-      // Handle the response
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to sign in');
-      }
-      
-      if (data.success) {
-        // Show success message
-        toast.success('Signed in successfully');
-        
-        // Redirect to dashboard or intended URL after a short delay
-        const redirectTo = new URLSearchParams(window.location.search).get('redirectTo') || '/__protected__/dashboard';
-        setTimeout(() => {
-          window.location.href = redirectTo;
-        }, 1000);
-      } else {
-        throw new Error(data?.error || 'Failed to sign in');
-      }
-    } catch (err) {
-      console.error('Sign in error:', err);
-      error = err instanceof Error ? err.message : 'Failed to sign in. Please try again.';
-      toast.error(error);
-      
-      // Clear any existing session data
-      try {
-        // Clear local storage and session storage
-        localStorage.removeItem('user');
-        sessionStorage.clear();
-        
-        // Clear cookies by setting an expired cookie with the same domain
-        const domain = window.location.hostname === 'localhost' ? 'localhost' : window.location.hostname;
-        document.cookie = `${SESSION_COOKIE_NAME}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; Domain=${domain};`;
-        
-        // Call the signout endpoint to clean up server-side session
-        try {
-          await fetch('/api/auth/signout', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-        } catch (signOutError) {
-          console.error('Failed to clear server session:', signOutError);
-        }
-      } catch (clearError) {
-        console.error('Failed to clear client session data:', clearError);
-      }
-      isCheckingAuth = false;
-      isLoading = false;
+      toast.error(errorMessage);
     }
-  }
+
+    // Show form after checking authentication
+    isCheckingAuth = false;
+  });
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
   {#if isCheckingAuth}
     <div class="text-center p-8">
       <p class="text-gray-600 mb-4">
@@ -269,107 +175,90 @@
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
     </div>
   {:else}
-  <div class="max-w-md w-full space-y-8">
-    <div>
-      <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-        Sign in to your account
-      </h2>
-      <p class="mt-2 text-center text-sm text-gray-600">
-        Don't have an account?{' '}
-        <a href="/auth/signup" class="font-medium text-indigo-600 hover:text-indigo-500">
-          Sign up here
-        </a>
-      </p>
-    </div>
-    
-    {#if error}
-      <div class="rounded-md bg-red-50 p-4">
-        <div class="flex">
-          <div class="ml-3">
-            <h3 class="text-sm font-medium text-red-800">Error</h3>
-            <div class="mt-2 text-sm text-red-700">
-              <p>{error}</p>
-            </div>
-          </div>
-        </div>
+    <div class="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-md transition-all duration-300 hover:shadow-lg">
+      <div>
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Welcome Back
+        </h2>
+        <h3 class="text-center text-lg text-gray-700">
+          Sign in to your account
+        </h3>
+        <p class="mt-2 text-center text-sm text-gray-600">
+          Don't have an account?{' '}
+          <a href="/auth/signup" class="font-medium text-indigo-600 hover:text-indigo-500">
+            Sign up here
+          </a>
+        </p>
       </div>
-    {/if}
-    
-    <form 
-      class="mt-8 space-y-6" 
-      on:submit|preventDefault={handleSubmit}
-    >
-      <input type="hidden" name="remember" value="true" />
-      <input type="hidden" name="callbackUrl" value={callbackUrl} />
-      <div class="rounded-md shadow-sm -space-y-px">
-        <div>
-          <label for="email-address" class="sr-only">Email address</label>
-          <input
-            id="email-address"
+      
+      <form 
+        method="POST"
+        use:enhance
+        class="mt-8 space-y-6"
+      >
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
+        <div class="space-y-4">
+          <!-- Email -->
+          <FormField
             name="email"
+            label="Email address"
             type="email"
             autocomplete="email"
             required
-            bind:value={email}
-            disabled={isLoading}
-            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-            placeholder="Email address"
+            bind:value={$form['email'] as string}
+            error={getError('email')}
           />
-        </div>
-        <div>
-          <label for="password" class="sr-only">Password</label>
-          <input
-            id="password"
+          
+          <!-- Password -->
+          <FormField
             name="password"
+            label="Password"
             type="password"
             autocomplete="current-password"
             required
-            bind:value={password}
-            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-            placeholder="Password"
+            bind:value={$form['password'] as string}
+            error={getError('password')}
           />
         </div>
-      </div>
 
-      <div class="flex items-center justify-between">
-        <div class="flex items-center">
-          <input
-            id="remember-me"
-            name="remember-me"
-            type="checkbox"
-            bind:checked={rememberMe}
-            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+        <div class="flex items-center justify-between">
+          <FormCheckbox
+            name="remember"
+            label="Remember me"
+            bind:checked={$form['remember'] as boolean}
+            error={getError('remember')}
           />
-          <label for="remember-me" class="ml-2 block text-sm text-gray-900">
-            Remember me
-          </label>
+
+          <div class="text-sm">
+            <a href="/auth/forgot-password" class="font-medium text-indigo-600 hover:text-indigo-500">
+              Forgot your password?
+            </a>
+          </div>
         </div>
 
-        <div class="text-sm">
-          <a href="/auth/forgot-password" class="font-medium text-indigo-600 hover:text-indigo-500">
-            Forgot your password?
-          </a>
+        <div>
+          <FormSubmit
+            label="Sign in"
+            loading={isLoading}
+            variant="primary"
+            size="md"
+          />
         </div>
-      </div>
-
-      <div>
-        <button
-          type="submit"
-          disabled={isLoading}
-          class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {#if isLoading}
-            <Loader2 class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" />
-            Signing in...
-          {:else}
-            <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-              <Mail class="h-5 w-5 text-indigo-500 group-hover:text-indigo-400" />
-            </span>
-            Sign in with Email
-          {/if}
-        </button>
-      </div>
-    </form>
-  </div>
+        
+        <div class="text-sm text-center mt-6">
+          <div class="flex items-center justify-center space-x-2 mb-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <p class="text-gray-600 font-medium">
+              Protected by TravelerAIgent security
+            </p>
+          </div>
+          <p class="text-gray-500 text-xs">
+            Your connection is encrypted and your data is secure
+          </p>
+        </div>
+      </form>
+    </div>
   {/if}
 </div>

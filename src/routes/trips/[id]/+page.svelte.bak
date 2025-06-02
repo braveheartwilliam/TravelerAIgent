@@ -1,0 +1,1142 @@
+<script lang="ts">
+  // UI Components
+  import { Badge } from "$lib/components/ui/badge";
+  import { Button } from "$lib/components/ui/button";
+  import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "$lib/components/ui/card";
+  import { Tabs, TabsContent, TabsList, TabsTrigger } from "$lib/components/ui/tabs";
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  
+  // Form Components
+  import DestinationForm from "$lib/components/trips/DestinationForm.svelte";
+  import TransportationForm from "$lib/components/trips/TransportationForm.svelte";
+  import ActivityForm from "$lib/components/trips/ActivityForm.svelte";
+  import LodgingForm from "$lib/components/trips/LodgingForm.svelte";
+  import EditTripForm from "$lib/components/trips/EditTripForm.svelte";
+  
+  // Tab Components
+  import DestinationsTab from "$lib/components/trips/DestinationsTab.svelte";
+  import TransportationTab from "$lib/components/trips/TransportationTab.svelte";
+  import ActivitiesTab from "$lib/components/trips/ActivitiesTab.svelte";
+  import LodgingTab from "$lib/components/trips/LodgingTab.svelte";
+  import ItineraryTab from "$lib/components/trips/ItineraryTab.svelte";
+  import TripMap from "$lib/components/trips/TripMap.svelte";
+
+  // Utils and imports
+  import { formatDate, formatDateRange } from '$lib/utils/date';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+  import { onMount } from "svelte";
+  import { browser } from '$app/environment';
+  import type { Trip, Destination, Transportation, Activity, Lodging, TripStatus } from '$lib/types/trip';
+  import { getTrip, updateTrip, deleteTrip } from '$lib/api/trips';
+  import { getDestinations, updateDestination, removeDestination, addDestination } from '$lib/api/destinations';
+  import { getTransportation, updateTransportation, removeTransportation, addTransportation } from '$lib/api/transportation';
+  import { getActivities, updateActivity, removeActivity, addActivity } from '$lib/api/activities';
+  import { getLodging, updateLodging, removeLodging, addLodging } from '$lib/api/lodging';
+  import { toast } from '$lib/components/ui/toast';
+  import { showSuccessToast, showErrorToast } from "$lib/utils/toast";
+
+  // Types
+  import type { ImportedDestination, ImportedTransportation, ImportedActivity, ImportedLodging } from "$lib/types/import";
+  import type { PageData } from "$lib/types/page";
+  
+  // Define interfaces for UI components with additional properties needed for the UI
+  // UI-extended interfaces with index signatures for property access
+  
+  // Extend the Destination interface to include missing properties
+  interface ExtendedDestination extends Destination {
+    ['tripId']: string;
+    ['notes']: string;
+    ['description']: string;
+    ['country']: string;
+    ['region']: string;
+    ['city']: string;
+    [key: string]: any;
+  }
+  
+  // Extend the Activity interface to include missing properties
+  interface ExtendedActivity extends Activity {
+    ['tripId']: string;
+    ['notes']: string;
+    [key: string]: any;
+  }
+  
+  // Extend the Lodging interface to include missing properties
+  interface ExtendedLodging extends Lodging {
+    ['tripId']: string;
+    ['notes']: string;
+    [key: string]: any;
+  }
+  
+  // Extended Transportation interface to include missing properties
+  interface ExtendedTransportation extends Transportation {
+    ['tripId']: string;
+    ['notes']: string;
+    ['provider']: string;
+    [key: string]: any;
+  }
+
+  // Extend the Trip interface to include our extended entity types
+  interface ExtendedTrip extends Trip {
+    ['destinations']: ExtendedDestination[];
+    ['transportation']: ExtendedTransportation[];
+    ['activities']: ExtendedActivity[];
+    ['lodging']: ExtendedLodging[];
+    [key: string]: any;
+  }
+  
+  interface DestinationWithUI extends ImportedDestination {
+    [key: string]: any;
+  }
+  
+  // Extended partial interfaces for use with API calls
+  interface ExtendedPartialActivity extends Partial<Activity> {
+    ['tripId']?: string;
+    [key: string]: any;
+  }
+  
+  interface ExtendedPartialLodging extends Partial<Lodging> {
+    ['tripId']?: string;
+    [key: string]: any;
+  }
+  
+  interface ExtendedPartialTransportation extends Partial<Transportation> {
+    ['tripId']?: string;
+    ['provider']?: string;
+    [key: string]: any;
+  }
+  
+  // Create a new interface instead of extending to avoid type conflicts
+  interface TransportationWithUI {
+    ['id']: string;
+    ['tripId']: string | undefined;
+    ['name']: string;
+    ['type']: 'land' | 'air' | 'sea';
+    ['startLocation']: string;
+    ['endLocation']: string;
+    ['startDate']: Date;
+    ['endDate']: Date;
+    ['description']: string;
+    ['status']: TripStatus | undefined;
+    ['cost']: number;
+    ['durationHours']: number;
+    ['confirmationNumber']: string | undefined;
+    // Additional UI properties
+    ['provider']: string | undefined;
+    ['notes']: string | undefined;
+    [key: string]: any;
+  }
+  
+  interface ActivityWithUI extends ImportedActivity {}
+  
+  interface LodgingWithUI extends ImportedLodging {}
+  
+  // Define tab values
+  type TabValue = "itinerary" | "destinations" | "transportation" | "activities" | "map" | "lodging";
+  
+  // Svelte 5 props and state
+  // Load trip data when the page loads
+  
+  // Map state
+  let mapElement: HTMLDivElement;
+  let markers: any[] = $state([]);
+  let routeLines: any[] = $state([]);
+  let routeArrows: any[] = $state([]);
+  let mapInitialized = $state(false);
+  let destinationCoordinates = $state<Array<{['id']: string, ['name']: string, ['latlng']: [number, number], ['startDate']: Date}>>([]);
+  
+  // Helper function to safely format a date with time
+  function safeFormatDateTime(date: Date | string | undefined | null): string {
+    if (!date) return '';
+    try {
+      const d = date instanceof Date ? date : new Date(String(date));
+      return d.toLocaleString();
+    } catch (error) {
+      return '';
+    }
+  }
+  
+  // Helper function to safely convert any value to a string
+  function safeString(value: any): string {
+    if (value === undefined || value === null) return '';
+    return String(value);
+  }
+  
+  // Type assertion functions to safely convert between imported types and UI types
+  function asImportedDestination(dest: any): ImportedDestination {
+    // Ensure latitude and longitude are numbers
+    const latitude = typeof dest['latitude'] === 'number' ? dest['latitude'] : parseFloat(String(dest['latitude'] || 0));
+    const longitude = typeof dest['longitude'] === 'number' ? dest['longitude'] : parseFloat(String(dest['longitude'] || 0));
+    
+    // Ensure dates are Date objects
+    const startDate = dest['startDate'] instanceof Date ? dest['startDate'] : 
+                     new Date(String(dest['startDate'] || new Date()));
+    const endDate = dest['endDate'] instanceof Date ? dest['endDate'] : 
+                   new Date(String(dest['endDate'] || new Date()));
+    
+    // Calculate duration in days
+    const durationDays = dest['durationDays'] || 
+                        Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+    
+    // Ensure type is valid
+    let normalizedType = 'city';
+    const validType = String(dest['type'] || 'city').toLowerCase();
+    if (validType === 'city' || validType === 'country' || validType === 'region' || 
+        validType === 'landmark' || validType === 'place-of-interest' || 
+        validType === 'port' || validType === 'other') {
+      normalizedType = validType;
+    }
+    
+    // Ensure budget is a number
+    const budget = typeof dest['budget'] === 'number' ? dest['budget'] : 
+                  parseFloat(String(dest['budget'] || 0));
+    
+    // Ensure status is valid
+    const finalStatus = dest['status'] || 'planned';
+    
+    // Ensure tripId is a string
+    const tripId = dest['tripId'] || $page.params.id as string || '';
+    
+    // Ensure notes is a string
+    const notes = dest['notes'] || dest['description'] || '';
+    
+    return {
+      ['id']: dest['id'] || crypto.randomUUID(),
+      ['name']: dest['name'] || 'New Destination',
+      ['address']: dest['address'] || '',
+      ['description']: dest['description'] || '',
+      ['latitude']: latitude,
+      ['longitude']: longitude,
+      ['startDate']: startDate,
+      ['endDate']: endDate,
+      ['durationDays']: durationDays,
+      ['status']: finalStatus as TripStatus,
+      ['type']: validType as 'city' | 'country' | 'region' | 'landmark' | 'other',
+      ['tripId']: tripId,
+      ['notes']: notes,
+      ['budget']: budget,
+      ['country']: dest['country'] || '',
+      ['region']: dest['region'] || '',
+      ['city']: dest['city'] || ''
+    };
+  }
+  
+  function asImportedTransportation(trans: any): ImportedTransportation {
+    let validType = trans['type'] || 'land';
+    const validTransportTypes = ['land', 'air', 'sea'];
+    if (!validTransportTypes.includes(validType)) {
+      validType = 'land'; // Default to land if invalid
+    }
+    
+    // Validate status against available TripStatus values
+    let validStatus = trans['status'] || 'draft';
+    const validStatusValues = ['draft', 'confirmed', 'completed', 'cancelled'];
+    if (!validStatusValues.includes(validStatus)) {
+      validStatus = 'draft';
+    }
+    
+    // Ensure cost is a number
+    const cost = typeof trans['cost'] === 'number' ? trans['cost'] : 0;
+    
+    return {
+      ['id']: trans['id'] || crypto.randomUUID(),
+      ['name']: trans['name'] || '',
+      ['type']: validType as 'land' | 'air' | 'sea',
+      ['provider']: trans['provider'] || '',
+      ['startDate']: trans['startDate'] instanceof Date ? trans['startDate'] : new Date(String(trans['startDate'] || new Date())),
+      ['endDate']: trans['endDate'] instanceof Date ? trans['endDate'] : new Date(String(trans['endDate'] || new Date())),
+      ['notes']: trans['notes'] || '',
+      ['status']: validStatus as TripStatus,
+      ['confirmationNumber']: trans['confirmationNumber'] || '',
+      ['startLocation']: trans['startLocation'] || trans['departureLocation'] || '',
+      ['endLocation']: trans['endLocation'] || trans['arrivalLocation'] || '',
+      ['cost']: cost,
+      ['currency']: trans['currency'] || 'USD',
+      ['tripId']: trans['tripId'] || $page.params.id || '',
+      ['description']: trans['description'] || trans['notes'] || '',
+      ['durationHours']: trans['durationHours'] || 0,
+      ['bookingConfirmation']: trans['bookingConfirmation'] || trans['confirmationNumber'] || '',
+      ['destinationId']: trans['destinationId'] || '',
+      ['departureLocation']: trans['departureLocation'] || trans['startLocation'] || '',
+      ['arrivalLocation']: trans['arrivalLocation'] || trans['endLocation'] || '',
+      ['departureDateTime']: trans['departureDateTime'] instanceof Date ? trans['departureDateTime'] : new Date(String(trans['departureDateTime'] || trans['startDate'] || new Date())),
+      ['arrivalDateTime']: trans['arrivalDateTime'] instanceof Date ? trans['arrivalDateTime'] : new Date(String(trans['arrivalDateTime'] || trans['endDate'] || new Date())),
+      ['bookingConfirmation']: trans['bookingConfirmation'] || trans['confirmationNumber'] || ''
+    };
+  }
+  
+  function asImportedActivity(act: any): ImportedActivity {
+    // Ensure type is a valid enum value
+    let validType = act['type'] || 'other';
+    const validActivityTypes = ['sightseeing', 'tour', 'adventure', 'cultural', 'entertainment', 'food', 'shopping', 'relaxation', 'sports', 'other'];
+    if (!validActivityTypes.includes(validType)) {
+      validType = 'other'; // Default to other if invalid
+    }
+    
+    // Validate status
+    let finalStatus = act['status'] || 'draft';
+    const validStatusValues = ['draft', 'planned', 'in-progress', 'completed', 'cancelled', 'on-hold', 'deleted', 'archived'];
+    if (!validStatusValues.includes(finalStatus)) {
+      finalStatus = 'draft';
+    }
+    
+    // Handle dates - ensure they're never undefined by defaulting to new Date()
+    const startDate = act['startDate'] instanceof Date ? act['startDate'] : 
+                     (act['startDate'] ? new Date(String(act['startDate'])) : new Date());
+    const endDate = act['endDate'] instanceof Date ? act['endDate'] : 
+                   (act['endDate'] ? new Date(String(act['endDate'])) : new Date());
+    
+    // Handle start and end times - ensure they're never undefined by defaulting to new Date()
+    const startTime = act['startTime'] instanceof Date ? act['startTime'] : 
+                    (act['startTime'] ? new Date(String(act['startTime'])) : new Date());
+    const endTime = act['endTime'] instanceof Date ? act['endTime'] : 
+                  (act['endTime'] ? new Date(String(act['endTime'])) : new Date());
+    
+    // Handle boolean flags
+    const isScheduled = typeof act['isScheduled'] === 'boolean' ? act['isScheduled'] : false;
+    const isShared = typeof act['isShared'] === 'boolean' ? act['isShared'] : false;
+    const isPaid = typeof act['isPaid'] === 'boolean' ? act['isPaid'] : false;
+    
+    // Handle dates for created/updated - ensure they're never undefined
+    const createdAt = act['createdAt'] instanceof Date ? act['createdAt'] : 
+                    (act['createdAt'] ? new Date(String(act['createdAt'])) : new Date());
+    const updatedAt = act['updatedAt'] instanceof Date ? act['updatedAt'] : 
+                    (act['updatedAt'] ? new Date(String(act['updatedAt'])) : new Date());
+    
+    // Ensure cost is a number
+    const cost = typeof act['cost'] === 'number' ? act['cost'] : 0;
+    
+    // Return the normalized activity object
+    return {
+      ['id']: act['id'] || crypto.randomUUID(),
+      ['tripId']: act['tripId'] || $page.params.id || '',
+      ['destinationId']: act['destinationId'] || '',
+      ['name']: act['name'] || 'New Activity',
+      ['type']: validType as 'sightseeing' | 'tour' | 'adventure' | 'cultural' | 'entertainment' | 'food' | 'shopping' | 'relaxation' | 'sports' | 'other',
+      ['startDate']: startDate,
+      ['endDate']: endDate,
+      ['startDateTime']: startTime, // Renamed to match the expected property
+      ['endDateTime']: endTime, // Renamed to match the expected property
+      ['notes']: act['notes'] || '',
+      ['status']: finalStatus as TripStatus,
+      ['bookingConfirmation']: act['bookingConfirmation'] || '',
+      ['currency']: act['currency'] || 'USD',
+      ['description']: act['description'] || '',
+      ['location']: act['location'] || '',
+      ['budget']: act['budget'] || 0,
+      ['isScheduled']: isScheduled,
+      ['isShared']: isShared,
+      ['isPaid']: isPaid,
+      ['createdAt']: createdAt,
+      ['updatedAt']: updatedAt,
+      ['cost']: cost
+    };
+  }
+  
+  function asImportedLodging(lodge: any): ImportedLodging {
+    let validType = lodge['type'] || 'hotel';
+    const validLodgingTypes = ['hotel', 'resort', 'airbnb', 'hostel', 'apartment', 'guesthouse', 'villa', 'cabin', 'camping', 'other'];
+    if (!validLodgingTypes.includes(validType)) {
+      validType = 'hotel';
+    }
+
+    let validStatus = lodge['status'] || 'confirmed';
+    const validStatusTypes = ['confirmed', 'pending', 'cancelled'];
+    if (!validStatusTypes.includes(validStatus)) {
+      validStatus = 'confirmed';
+    }
+    
+    return {
+      ['id']: lodge['id'] || crypto.randomUUID(),
+      ['tripId']: lodge['tripId'] || $page.params.id || '',
+      ['destinationId']: lodge['destinationId'] || '',
+      ['checkInDate']: lodge['checkInDate'] instanceof Date ? lodge['checkInDate'] : new Date(String(lodge['checkInDate'] || new Date())),
+      ['checkOutDate']: lodge['checkOutDate'] instanceof Date ? lodge['checkOutDate'] : new Date(String(lodge['checkOutDate'] || new Date())),
+      ['description']: lodge['description'] || '',
+      ['name']: lodge['name'] || 'Lodging',
+      ['type']: validType as 'hotel' | 'resort' | 'airbnb' | 'hostel' | 'apartment' | 'guesthouse' | 'villa' | 'cabin' | 'camping' | 'other',
+      ['address']: lodge['address'] || '',
+      ['cost']: lodge['cost'] ? Number(lodge['cost']) : 0,
+      ['status']: validStatus as TripStatus,
+      ['isScheduled']: lodge['isScheduled'] === true,
+      ['isShared']: lodge['isShared'] === true,
+      ['isPaid']: lodge['isPaid'] === true,
+      ['bookingConfirmation']: lodge['bookingConfirmation'] || '',
+      ['roomType']: lodge['roomType'] || '',
+      ['amenities']: Array.isArray(lodge['amenities']) ? lodge['amenities'] : [],
+      ['notes']: lodge['notes'] || '',
+      ['createdAt']: lodge['createdAt'] instanceof Date ? lodge['createdAt'] : new Date(),
+      ['updatedAt']: lodge['updatedAt'] instanceof Date ? lodge['updatedAt'] : new Date(),
+      ['currency']: lodge['currency'] || 'USD',
+      ['confirmationNumber']: lodge['confirmationNumber'] || lodge['bookingConfirmation'] || '',
+      ['numberOfGuests']: typeof lodge['numberOfGuests'] === 'number' ? lodge['numberOfGuests'] : 1
+    };
+  }
+
+  // Svelte 5 props and state
+  // Load trip data when the page loads
+  
+  
+  // Helper function to safely format a date with time
+  function safeFormatDateTime(date: Date | string | undefined | null): string {
+    if (!date) return '';
+    try {
+      const d = date instanceof Date ? date : new Date(String(date));
+      return d.toLocaleString();
+    } catch (error) {
+      return '';
+    }
+  }
+  
+  // Helper function to safely convert any value to a string
+  
+  function asTransportation(trans: ImportedTransportation): ExtendedTransportation {
+    return {
+      ...trans,
+      ['id']: trans['id'],
+      ['name']: trans['name'],
+      ['type']: trans['type'],
+      ['provider']: trans['provider'],
+      ['startDate']: trans['startDate'],
+      ['endDate']: trans['endDate'],
+      ['notes']: trans['notes'],
+      ['status']: trans['status'],
+      ['confirmationNumber']: trans['confirmationNumber'],
+      ['startLocation']: trans['startLocation'],
+      ['endLocation']: trans['endLocation'],
+      ['cost']: trans['cost'],
+      ['currency']: trans['currency'],
+      ['tripId']: trans['tripId'] || '',
+      ['description']: trans['description'] || '',
+      ['durationHours']: trans['durationHours'],
+      ['bookingConfirmation']: trans['bookingConfirmation'] || trans['confirmationNumber'] || '',
+      ['destinationId']: trans['destinationId'] || '',
+      ['departureLocation']: trans['departureLocation'] || trans['startLocation'] || '',
+      ['arrivalLocation']: trans['arrivalLocation'] || trans['endLocation'] || '',
+      ['departureDateTime']: trans['departureDateTime'],
+      ['arrivalDateTime']: trans['arrivalDateTime'],
+      ['bookingConfirmation']: trans['bookingConfirmation'] || trans['confirmationNumber'] || ''
+    } as ExtendedTransportation;
+  }
+  
+  function asActivity(act: ImportedActivity): ExtendedActivity {
+    return {
+      ...act,
+      ['id']: act['id'],
+      ['tripId']: act['tripId'] || '',
+      ['destinationId']: act['destinationId'] || '',
+      ['name']: act['name'],
+      ['type']: act['type'],
+      ['startDate']: act['startDate'],
+      ['endDate']: act['endDate'],
+      ['startDateTime']: act['startDateTime'],
+      ['endDateTime']: act['endDateTime'],
+      ['notes']: act['notes'],
+      ['status']: act['status'],
+      ['bookingConfirmation']: act['bookingConfirmation'],
+      ['currency']: act['currency'],
+      ['description']: act['description'],
+      ['location']: act['location'],
+      ['budget']: act['budget'],
+      ['isScheduled']: act['isScheduled'],
+      ['isShared']: act['isShared'],
+      ['isPaid']: act['isPaid'],
+      ['createdAt']: act['createdAt'],
+      ['updatedAt']: act['updatedAt'],
+      ['cost']: act['cost']
+    } as ExtendedActivity;
+  }
+  
+  function asLodging(lodge: ImportedLodging): ExtendedLodging {
+    return {
+      ...lodge,
+      ['id']: lodge['id'],
+      ['tripId']: lodge['tripId'] || '',
+      ['destinationId']: lodge['destinationId'] || '',
+      ['checkInDate']: lodge['checkInDate'],
+      ['checkOutDate']: lodge['checkOutDate'],
+      ['description']: lodge['description'],
+      ['name']: lodge['name'],
+      ['type']: lodge['type'],
+      ['address']: lodge['address'],
+      ['cost']: lodge['cost'],
+      ['currency']: lodge['currency'],
+      ['status']: lodge['status'],
+      ['isScheduled']: lodge['isScheduled'],
+      ['isShared']: lodge['isShared'],
+      ['isPaid']: lodge['isPaid'],
+      ['bookingConfirmation']: lodge['bookingConfirmation'],
+      ['confirmationNumber']: lodge['confirmationNumber'],
+      ['roomType']: lodge['roomType'],
+      ['amenities']: lodge['amenities'],
+      ['notes']: lodge['notes'],
+      ['numberOfGuests']: lodge['numberOfGuests'],
+      ['createdAt']: lodge['createdAt'],
+      ['updatedAt']: lodge['updatedAt']
+    } as ExtendedLodging;
+  }
+  
+  // Utility functions
+  function safeFormatDateRange(startDate: Date | string | undefined, endDate: Date | string | undefined): string {
+    if (!startDate && !endDate) return 'No dates specified';
+    
+    try {
+      const start = startDate ? new Date(startDate) : undefined;
+      const end = endDate ? new Date(endDate) : undefined;
+      
+      if (start && end) {
+        const startStr = formatDate(start);
+        const endStr = formatDate(end);
+        return `${startStr} - ${endStr}`;
+      } else if (start) {
+        return formatDate(start);
+      } else if (end) {
+        return formatDate(end);
+      }
+      
+      return 'Invalid dates';
+    } catch (error) {
+      console.error('Error formatting date range:', error);
+      return 'Invalid dates';
+    }
+  }
+  
+  function calculateDurationDays(startDate: Date | string | undefined, endDate: Date | string | undefined): number {
+    if (!startDate || !endDate) return 0;
+    
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      // Calculate the difference in milliseconds
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      
+      // Convert to days and round up
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+    } catch (error) {
+      console.error('Error calculating duration:', error);
+      return 1;
+    }
+  }
+  
+  // Map marker update function
+  function updateMapMarkers() {
+    // Implementation would go here if we had access to the map component
+    console.log('Updating map markers');
+    // This is a placeholder for the actual implementation
+    
+    // Clear existing route lines
+    routeLines.forEach(line => line.remove());
+    routeLines = [];
+    
+    // Add markers for each destination
+    if (trip['destinations'] && trip['destinations'].length > 0) {
+      const sortedDestinations = [...trip['destinations']].sort((a, b) => {
+        const aDate = a['startDate'] ? new Date(a['startDate']).getTime() : 0;
+        const bDate = b['startDate'] ? new Date(b['startDate']).getTime() : 0;
+        return aDate - bDate;
+      });
+      // ... (rest of the code remains the same)
+      
+      // Update destination coordinates for other components
+      destinationCoordinates = sortedDestinations
+        .filter(dest => dest['latitude'] && dest['longitude'])
+        .map(dest => ({
+          ['id']: dest['id'],
+          ['name']: dest['name'],
+          ['latlng']: [dest['latitude'], dest['longitude']] as [number, number],
+          ['startDate']: dest['startDate'] instanceof Date ? dest['startDate'] : new Date(dest['startDate'] || Date.now())
+        }));
+    }
+    
+    console.log('Map markers updated');
+  }
+
+  // Load trip data function
+  async function loadTripData() {
+    isLoading = true;
+    try {
+      // Ensure tripId is a string
+      const tripId = $page.params.id as string;
+
+      // Load trip
+      const tripData = await getTrip(tripId);
+      // Cast the Trip to ExtendedTrip to avoid type incompatibility
+      trip = tripData as unknown as ExtendedTrip;
+
+      // Load destinations
+      const destinationsData = await getDestinations(tripId);
+      const processedDestinations = destinationsData.map(dest => {
+        // Convert to ImportedDestination first to ensure it has all required properties
+        const importedDest = asImportedDestination({
+          ...dest,
+          ['tripId']: tripId,
+          ['notes']: dest['notes'] || dest['description'] || ''
+        });
+        return asDestination(importedDest);
+      });
+      destinations = processedDestinations;
+
+      // Load transportation
+      const transportationData = await getTransportation(tripId);
+      transportation = transportationData.map(trans => {
+        // Convert to ImportedTransportation first to ensure it has all required properties
+        const importedTrans = asImportedTransportation({
+          ...trans,
+          ['tripId']: tripId,
+          ['notes']: trans['notes'] || ''
+        });
+        return asTransportation(importedTrans);
+      });
+
+      // Load activities
+      const activitiesData = await getActivities(tripId);
+      activities = activitiesData.map(act => {
+        // Convert to ImportedActivity first to ensure it has all required properties
+        const importedAct = asImportedActivity({
+          ...act,
+          ['tripId']: tripId,
+          ['notes']: act['notes'] || ''
+        });
+        return asActivity(importedAct);
+      });
+
+      // Load lodging
+      const lodgingData = await getLodging(tripId);
+      lodging = lodgingData.map(lodge => {
+        // Convert to ImportedLodging first to ensure it has all required properties
+        const importedLodge = asImportedLodging({
+          ...lodge,
+          ['tripId']: tripId,
+          ['notes']: lodge['notes'] || ''
+        });
+        return asLodging(importedLodge);
+      });
+
+      // Update map markers
+      updateMapMarkers();
+      
+    } catch (error) {
+      console.error('Error loading trip data:', error);
+      showErrorToast('Error', 'Failed to load trip data');
+    } finally {
+      isLoading = false;
+    }
+  }
+
+// Handle adding a new destination
+async function handleAddDestination(dest: ImportedDestination) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedDest = asImportedDestination({
+      ...dest,
+      ['tripId']: dest['tripId'] || tripId,
+      ['address']: dest['address'] || '',
+      ['description']: dest['description'] || '',
+      ['startDate']: dest['startDate'] instanceof Date ? dest['startDate'] : new Date(String(dest['startDate'] || new Date())),
+      ['endDate']: dest['endDate'] instanceof Date ? dest['endDate'] : new Date(String(dest['endDate'] || new Date())),
+      ['status']: dest['status'] || 'draft',
+      ['type']: dest['type'] || 'city'
+    });
+    await addDestination(tripId, importedDest as any);
+    await loadTripData();
+    showSuccessToast('Success', 'Destination added successfully');
+  } catch (error) {
+    console.error('Error saving destination:', error);
+    showErrorToast('Error', 'Failed to save destination');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle updating a destination
+async function handleUpdateDestination(destination: ImportedDestination) {
+  isLoading = true;
+  try {
+    const result = await updateDestination(destination['id'], destination as any);
+    if (result) {
+      // Refresh destinations
+      const newDestinations = await getDestinations(trip['id']);
+      trip['destinations'] = newDestinations.map(d => {
+        // Convert to ImportedDestination first to ensure it has all required properties
+        const importedDest = asImportedDestination({
+          ...d,
+          ['tripId']: trip['id'],
+          ['notes']: d['notes'] || d['description'] || ''
+        });
+        return asDestination(importedDest);
+      });
+      showSuccessToast('Destination updated', 'Your destination has been updated successfully.');
+    }
+  } catch (error) {
+    console.error('Error updating destination:', error);
+    showErrorToast('Error', 'Failed to update destination');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a new lodging
+async function handleAddLodging(lodging: ImportedLodging) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedLodge = asImportedLodging({
+      ...lodging,
+      ['tripId']: lodging['tripId'] || tripId,
+      ['checkInDate']: lodging['checkInDate'] instanceof Date ? lodging['checkInDate'] : new Date(String(lodging['checkInDate'] || new Date())),
+      ['checkOutDate']: lodging['checkOutDate'] instanceof Date ? lodging['checkOutDate'] : new Date(String(lodging['checkOutDate'] || new Date())),
+      ['destinationId']: lodging['destinationId'] || '',
+      ['status']: lodging['status'] || 'confirmed',
+      ['description']: lodging['description'] || lodging['notes'] || ''
+    });
+    await addLodging(tripId, importedLodge);
+    await loadTripData();
+    showSuccessToast('Success', 'Lodging added successfully');
+  } catch (error) {
+    console.error('Error saving lodging:', error);
+    showErrorToast('Error', 'Failed to save lodging');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle updating a lodging
+async function handleUpdateLodging(lodging: ImportedLodging) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedLodge = asImportedLodging({
+      ...lodging,
+      ['tripId']: lodging['tripId'] || tripId,
+      ['checkInDate']: lodging['checkInDate'] instanceof Date ? lodging['checkInDate'] : new Date(String(lodging['checkInDate'] || new Date())),
+      ['checkOutDate']: lodging['checkOutDate'] instanceof Date ? lodging['checkOutDate'] : new Date(String(lodging['checkOutDate'] || new Date())),
+      ['destinationId']: lodging['destinationId'] || '',
+      ['status']: lodging['status'] || 'confirmed',
+      ['description']: lodging['description'] || lodging['notes'] || ''
+    });
+    await updateLodging(lodging['id'], importedLodge as any);
+    await loadTripData();
+    showSuccessToast('Success', 'Lodging updated successfully');
+  } catch (error) {
+    console.error('Error updating lodging:', error);
+    showErrorToast('Error', 'Failed to update lodging');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle saving transportation (add or update)
+async function handleSaveTransportation(transportation: TransportationWithUI) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedTrans = asImportedTransportation({
+      ...transportation,
+      ['tripId']: transportation['tripId'] || tripId,
+      ['departureLocation']: transportation['startLocation'] || '',
+      ['arrivalLocation']: transportation['endLocation'] || '',
+      ['provider']: transportation['provider'] || '',
+      ['description']: transportation['description'] || transportation['notes'] || '',
+      ['startDate']: transportation['startDate'] instanceof Date ? transportation['startDate'] : new Date(String(transportation['startDate'] || new Date())),
+      ['endDate']: transportation['endDate'] instanceof Date ? transportation['endDate'] : new Date(String(transportation['endDate'] || new Date())),
+      ['durationHours']: transportation['durationHours'] || 0
+    });
+    
+    if (transportation['id']) {
+      // Update existing transportation
+      await updateTransportation(transportation['id'], importedTrans as any);
+      showSuccessToast('Success', 'Transportation updated successfully');
+    } else {
+      // Add new transportation
+      await addTransportation(tripId, importedTrans as any);
+      showSuccessToast('Success', 'Transportation added successfully');
+    }
+    
+    await loadTripData();
+  } catch (error) {
+    console.error('Error saving transportation:', error);
+    showErrorToast('Error', 'Failed to save transportation');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a new activity
+async function handleAddActivity(activity: ImportedActivity) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedAct = asImportedActivity({
+      ...activity,
+      ['tripId']: activity['tripId'] || tripId,
+      ['cost']: activity['budget'] || 0,
+      ['startDate']: activity['startDate'] instanceof Date ? activity['startDate'] : new Date(String(activity['startDate'] || new Date())),
+      ['endDate']: activity['endDate'] instanceof Date ? activity['endDate'] : new Date(String(activity['endDate'] || new Date())),
+      ['description']: activity['description'] || activity['notes'] || ''
+    });
+    await addActivity(tripId, importedAct as any);
+    await loadTripData();
+    showSuccessToast('Success', 'Activity added successfully');
+  } catch (error) {
+    console.error('Error saving activity:', error);
+    showErrorToast('Error', 'Failed to save activity');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle updating an activity
+async function handleUpdateActivity(activity: ImportedActivity) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    const importedAct = asImportedActivity({
+      ...activity,
+      ['tripId']: activity['tripId'] || tripId,
+      ['cost']: activity['budget'] || 0,
+      ['startDate']: activity['startDate'] instanceof Date ? activity['startDate'] : new Date(String(activity['startDate'] || new Date())),
+      ['endDate']: activity['endDate'] instanceof Date ? activity['endDate'] : new Date(String(activity['endDate'] || new Date())),
+      ['description']: activity['description'] || activity['notes'] || ''
+    });
+    await updateActivity(activity['id'], importedAct as any);
+    await loadTripData();
+    showSuccessToast('Success', 'Activity updated successfully');
+  } catch (error) {
+    console.error('Error updating activity:', error);
+    showErrorToast('Error', 'Failed to update activity');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle updating a trip
+async function handleUpdateTrip(trip: Trip) {
+  try {
+    isLoading = true;
+    await updateTrip(trip['id'], trip);
+    showSuccessToast('Trip updated', 'Your trip has been updated successfully.');
+    // Refresh the page to show the updated trip
+    window.location.reload();
+  } catch (error) {
+    console.error('Error updating trip:', error);
+    showErrorToast('Error', 'Failed to update trip');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle removing a destination
+async function handleRemoveDestination(destination: ImportedDestination) {
+  try {
+    isLoading = true;
+    await removeDestination($page.params.id as string, destination['id']);
+    await loadTripData();
+    showSuccessToast('Success', 'Destination removed successfully');
+  } catch (error) {
+    console.error('Error removing destination:', error);
+    showErrorToast('Error', 'Failed to remove destination');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle removing lodging
+async function handleRemoveLodging(lodging: ImportedLodging) {
+  try {
+    isLoading = true;
+    await removeLodging($page.params.id as string, lodging['id']);
+    await loadTripData();
+    showSuccessToast('Success', 'Lodging removed successfully');
+  } catch (error) {
+    console.error('Error removing lodging:', error);
+    showErrorToast('Error', 'Failed to remove lodging');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle removing transportation
+async function handleRemoveTransportation(transportation: ImportedTransportation) {
+  try {
+    isLoading = true;
+    await removeTransportation($page.params.id as string, transportation['id']);
+    await loadTripData();
+    showSuccessToast('Success', 'Transportation removed successfully');
+  } catch (error) {
+    console.error('Error removing transportation:', error);
+    showErrorToast('Error', 'Failed to remove transportation');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle removing an activity
+async function handleRemoveActivity(activity: ImportedActivity) {
+  try {
+    isLoading = true;
+    const tripId = $page.params.id as string;
+    await removeActivity(tripId, activity['id'] as string);
+    await loadTripData();
+    showSuccessToast('Success', 'Activity removed successfully');
+  } catch (error) {
+    console.error('Error removing activity:', error);
+    showErrorToast('Error', 'Failed to remove activity');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a note to a destination
+async function handleAddDestinationNote(destination: ExtendedDestination, note: string) {
+  try {
+    isLoading = true;
+    const updatedDestination = {
+      ...destination,
+      ['notes']: note
+    };
+    await updateDestination(trip['id'], destination['id'], updatedDestination);
+    await loadTripData();
+    showSuccessToast('Note added', 'Your note has been added successfully.');
+  } catch (error) {
+    console.error('Error adding note:', error);
+    showErrorToast('Error', 'Failed to add note');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a note to lodging
+async function handleAddLodgingNote(lodging: ExtendedLodging, note: string) {
+  try {
+    isLoading = true;
+    const updatedLodging = {
+      ...lodging,
+      ['notes']: note
+    };
+    await updateLodging(trip['id'], lodging['id'], updatedLodging);
+    await loadTripData();
+    showSuccessToast('Note added', 'Your note has been added successfully.');
+  } catch (error) {
+    console.error('Error adding note:', error);
+    showErrorToast('Error', 'Failed to add note');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a note to transportation
+async function handleAddTransportationNote(transportation: ExtendedTransportation, note: string) {
+  try {
+    isLoading = true;
+    const updatedTransportation = {
+      ...transportation,
+      ['provider']: transportation['provider'] || '',
+      ['notes']: note
+    };
+    await updateTransportation(trip['id'], transportation['id'], updatedTransportation);
+    await loadTripData();
+    showSuccessToast('Note added', 'Your note has been added successfully.');
+  } catch (error) {
+    console.error('Error adding note:', error);
+    showErrorToast('Error', 'Failed to add note');
+  } finally {
+    isLoading = false;
+  }
+}
+
+// Handle adding a note to activity
+async function handleAddActivityNote(activity: ExtendedActivity, note: string) {
+  try {
+    isLoading = true;
+    const updatedActivity = {
+      ...activity,
+      ['notes']: note
+    };
+    await updateActivity(trip['id'], activity['id'], updatedActivity);
+    await loadTripData();
+    showSuccessToast('Note added', 'Your note has been added successfully.');
+  } catch (error) {
+    console.error('Error adding note:', error);
+    showErrorToast('Error', 'Failed to add note');
+  } finally {
+    isLoading = false;
+  }
+}
+
+</script>
+
+<div class="container py-8 max-w-6xl mx-auto space-y-8">
+  <!-- Trip Header -->
+  <div class="flex justify-between items-center">
+    <div>
+      <h1 class="text-3xl font-bold">{trip['name']}</h1>
+      <p class="text-muted-foreground">{safeFormatDateRange(trip['startDate'], trip['endDate'])}</p>
+    </div>
+    <Button variant="outline" on:click={() => isEditTripFormOpen = true}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2 h-4 w-4"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+      Edit Trip
+    </Button>
+  </div>
+  
+  <!-- Trip Status -->
+  <div class="flex items-center gap-4 bg-muted/50 p-4 rounded-lg">
+    <div class="flex items-center gap-2">
+      <Badge variant={trip['status'] === 'draft' ? 'outline' : trip['status'] === 'planned' ? 'secondary' : 'default'}>
+        {trip['status'] === 'draft' ? 'Draft' : trip['status'] === 'planned' ? 'Planned' : 'Completed'}
+      </Badge>
+      <span class="text-sm text-muted-foreground">{trip['destinations']?.length || 0} destinations</span>
+      <span class="text-sm text-muted-foreground">•</span>
+      <span class="text-sm text-muted-foreground">{calculateDurationDays(trip['startDate'], trip['endDate'])} days</span>
+    </div>
+  </div>
+
+  <!-- Trip Tabs -->
+  <Tabs value={activeTab} onValueChange={(value: string | undefined) => activeTab = (value || 'itinerary') as TabValue} class="w-full">
+    <TabsList class="grid grid-cols-6 w-full mb-6">
+      <TabsTrigger value="itinerary">Itinerary</TabsTrigger>
+      <TabsTrigger value="destinations">Destinations</TabsTrigger>
+      <TabsTrigger value="transportation">Transportation</TabsTrigger>
+      <TabsTrigger value="activities">Activities</TabsTrigger>
+      <TabsTrigger value="map">Map</TabsTrigger>
+      <TabsTrigger value="lodging">Lodging</TabsTrigger>
+    </TabsList>
+
+    <!-- Tab content here -->
+  </Tabs>
+
+  <!-- Destination Form Dialog -->
+  <DestinationForm 
+    destination={currentDestination ? asDestination(currentDestination) : null}
+    open={isDestinationFormOpen} 
+    on:openChange={(e) => isDestinationFormOpen = e.detail} 
+    on:save={async (e) => {
+      const destinationData = {
+        ...e.detail,
+        ['tripId']: $page.params.id || '',
+        ['address']: e.detail['address'] || '',
+        ['description']: e.detail['description'] || '',
+        ['notes']: e.detail['notes'] || e.detail['description'] || '',
+        ['startDate']: e.detail['startDate'] instanceof Date ? e.detail['startDate'] : new Date(String(e.detail['startDate'] || new Date())),
+        ['endDate']: e.detail['endDate'] instanceof Date ? e.detail['endDate'] : new Date(String(e.detail['endDate'] || new Date())),
+        ['status']: e.detail['status'] || 'draft',
+        ['type']: e.detail['type'] || 'city'
+      };
+      
+      if (currentDestination && currentDestination['id']) {
+        destinationData['id'] = currentDestination['id'];
+        handleUpdateDestination(destinationData);
+      } else {
+        handleAddDestination(destinationData);
+      }
+    }}
+  />
+  
+  <!-- Transportation Form Dialog -->
+  <TransportationForm 
+    transportation={currentTransportation ? asTransportation(currentTransportation) : null} 
+    destinations={destinations}
+    open={isTransportationFormOpen} 
+    on:openChange={(e) => isTransportationFormOpen = e.detail} 
+    on:save={async (e) => {
+      const transportationData = {
+        ...e.detail,
+        ['tripId']: $page.params.id,
+        ['departureLocation']: e.detail?.['startLocation'] || '',
+        ['arrivalLocation']: e.detail['endLocation'] || '',
+        // Using properties from our custom TransportationWithUI interface
+        ['provider']: e.detail['provider'] || '',
+        ['description']: e.detail['description'] || '',
+        ['notes']: e.detail['notes'] || '',
+        ['cost']: typeof e.detail['cost'] === 'number' ? e.detail['cost'] : 0,
+        ['status']: (e.detail['status'] || 'confirmed') as TripStatus,
+        ['confirmationNumber']: e.detail['confirmationNumber'] || '',
+        ['startDate']: e.detail['startDate'] instanceof Date ? e.detail['startDate'] : new Date(String(e.detail['startDate'] || new Date())),
+        ['endDate']: e.detail['endDate'] instanceof Date ? e.detail['endDate'] : new Date(String(e.detail['endDate'] || new Date())),
+        ['durationHours']: e.detail['durationHours'] || 0
+      };
+      
+      if (currentTransportation && currentTransportation['id']) {
+        transportationData['id'] = currentTransportation['id'];
+        handleSaveTransportation(transportationData);
+      } else {
+        handleSaveTransportation(transportationData);
+      }
+    }}
+  />
+  
+  <!-- Activity Form Dialog -->
+  <ActivityForm 
+    activity={currentActivity ? asActivity(currentActivity) : null} 
+    open={isActivityFormOpen} 
+    destinations={trip['destinations']}
+    on:openChange={(e) => isActivityFormOpen = e.detail} 
+    on:save={async (e) => {
+      const activityData = {
+        ...e.detail,
+        ['tripId']: $page.params.id,
+        ['destinationId']: e.detail['destinationId'] || '',
+        ['startDate']: e.detail['startDate'] instanceof Date ? e.detail['startDate'] : new Date(String(e.detail['startDate'] || new Date())),
+        ['endDate']: e.detail['endDate'] instanceof Date ? e.detail['endDate'] : new Date(String(e.detail['endDate'] || new Date())),
+        ['description']: e.detail['description'] || e.detail['notes'] || ''
+      };
+      
+      if (currentActivity && currentActivity['id']) {
+        activityData['id'] = currentActivity['id'];
+        handleUpdateActivity(activityData);
+      } else {
+        handleAddActivity(activityData);
+      }
+    }}
+  />
+  
+  <!-- Lodging Form Dialog -->
+  <LodgingForm 
+    lodging={currentLodging ? asLodging(currentLodging) : null} 
+    open={isLodgingFormOpen} 
+    destinations={trip['destinations']}
+    on:openChange={(e) => isLodgingFormOpen = e.detail} 
+    on:save={async (e) => {
+      const lodgingData = {
+        ...e.detail,
+        ['tripId']: $page.params.id,
+        ['destinationId']: e.detail['destinationId'] || '',
+        ['checkInDate']: e.detail['checkInDate'] instanceof Date ? e.detail['checkInDate'] : new Date(String(e.detail['checkInDate'] || new Date())),
+        ['checkOutDate']: e.detail['checkOutDate'] instanceof Date ? e.detail['checkOutDate'] : new Date(String(e.detail['checkOutDate'] || new Date())),
+        ['description']: e.detail['description'] || e.detail['notes'] || ''
+      };
+      
+      if (currentLodging && currentLodging['id']) {
+        lodgingData['id'] = currentLodging['id'];
+        handleUpdateLodging(lodgingData);
+      } else {
+        handleAddLodging(lodgingData);
+      }
+    }}
+  />
+  
+  <!-- Edit Trip Form Dialog -->
+  <EditTripForm 
+    trip={trip} 
+    open={isEditTripFormOpen} 
+    on:openChange={(e) => isEditTripFormOpen = e.detail} 
+    on:save={async (e) => {
+      isLoading = true;
+      try {
+        await updateTrip(trip['id'], e.detail as Trip);
+        showSuccessToast('Trip updated', 'Your trip has been updated successfully.');
+        // Refresh the page to show the updated trip
+        window.location.reload();
+      } catch (error) {
+        console.error('Failed to update trip:', error);
+        showErrorToast('Error', 'Failed to update trip. Please try again.');
+      } finally {
+        isLoading = false;
+      }
+    }}
+  />
+</div>

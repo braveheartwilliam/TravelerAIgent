@@ -1,84 +1,38 @@
 <script lang="ts">
-  import { superForm } from 'sveltekit-superforms/client';
+  import { createForm } from '$lib/forms/superforms';
+  import { registrationFormSchema } from '$lib/forms/superforms';
+  import { FormField, FormCheckbox, FormSubmit } from '$lib/components/forms';
+  import { toast } from 'svelte-sonner';
   import type { PageData } from './$types';
-  import { zod } from 'sveltekit-superforms/adapters';
-  import { signupSchema } from '$lib/schemas/auth';
   import { onMount } from 'svelte';
+  import type { z } from 'zod';
+  
+  // Define the form data type based on the schema
+  type FormData = z.infer<typeof registrationFormSchema>;
 
-  export let data: PageData;
+  const { data } = $props<{ data: PageData }>();
 
-  const { form, errors, enhance, message } = superForm(data.form, {
-    validators: zod(signupSchema),
-    onError: ({ result }) => {
-      // Handle form validation errors
-      $message = {
-        type: 'error',
-        text: result.error?.message || 'Please fix the form errors.'
-      };
+  // Create form with our utility and schema
+  const { form, errors, enhance, submitting } = createForm({
+    schema: registrationFormSchema,
+    data: data.form,
+    successMessage: 'Account created successfully!',
+    errorMessage: 'Please fix the form errors.',
+    resetAfterSubmit: false,
+    onSuccess: () => {
+      // Redirect to login page after successful registration
+      window.location.href = '/auth/signin';
     },
-    onSubmit: async ({ cancel }) => {
-      cancel(); // Cancel the default form submission
-      
-      const formData = new FormData();
-      formData.append('userName', $form.userName);
-      formData.append('fullName', $form.fullName);
-      formData.append('email', $form.email);
-      formData.append('password', $form.password);
-      formData.append('confirmPassword', $form.confirmPassword);
-      
-      try {
-        console.log('Submitting signup form...');
-        const response = await fetch('/auth/signup', {
-          method: 'POST',
-          body: formData,
-          headers: {
-            'Accept': 'application/json'
-          },
-          credentials: 'include' // Important for cookies
-        });
-        
-        console.log('Signup response status:', response.status);
-        
-        // Handle successful response
-        if (response.ok) {
-          const result = await response.json();
-          console.log('Signup successful:', result);
-          
-          // Redirect to dashboard or home page
-          window.location.href = '/';
-          return;
-        }
-        
-        // Handle error response
-        try {
-          const errorData = await response.json();
-          console.error('Signup error response:', errorData);
-          
-          $message = {
-            type: 'error',
-            text: errorData.error || errorData.message || 'An error occurred during signup.'
-          };
-        } catch (parseError) {
-          console.error('Failed to parse error response:', parseError);
-          $message = {
-            type: 'error',
-            text: `Server error: ${response.status} ${response.statusText}`
-          };
-        }
-      } catch (error) {
-        console.error('Signup request failed:', error);
-        $message = {
-          type: 'error',
-          text: 'Failed to connect to the server. Please check your connection and try again.'
-        };
-      }
-    }
+    validationMode: 'change'
   });
-
+  
+  // Loading state for the submit button
+  const isLoading = $derived($submitting);
+      
   // Helper function to get error message for a field
-  function getError(field: string): string | undefined {
-    const fieldErrors = errors[field];
-    return Array.isArray(fieldErrors) ? fieldErrors[0] : undefined;
+  function getError(field: keyof FormData): string {
+    if (!$errors[field]) return '';
+    return Array.isArray($errors[field]) ? $errors[field][0] || '' : '';
   }
 
   // Initialize form with default values
@@ -91,181 +45,116 @@
   });
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-  <div class="max-w-md w-full space-y-8">
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+  <div class="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-md transition-all duration-300 hover:shadow-lg">
     <div>
       <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-        Create your account
+        Join TravelerAIgent
       </h2>
+      <h3 class="text-center text-lg text-gray-700">
+        Create your account to get started
+      </h3>
     </div>
     
-    {#if $message}
-      <div class="rounded-md p-4 mb-4 { $message.type === 'error' ? 'bg-red-50' : 'bg-green-50' }">
-        <div class="flex">
-          <div class="flex-shrink-0">
-            {#if $message.type === 'error'}
-              <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
-              </svg>
-            {:else}
-              <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-              </svg>
-            {/if}
-          </div>
-          <div class="ml-3">
-            <p class="text-sm font-medium {$message.type === 'error' ? 'text-red-800' : 'text-green-800'}">
-              {$message.text}
-            </p>
-          </div>
-        </div>
-      </div>
-    {/if}
+    <!-- Alert messages are now handled by the toast component -->
     
     <form method="POST" use:enhance class="space-y-6">
       <div class="space-y-4">
         <!-- Username -->
-        <div>
-          <label for="userName" class="block text-sm font-medium text-gray-700">
-            Username
-          </label>
-          <div class="mt-1">
-            <input
-              id="userName"
-              name="userName"
-              type="text"
-              autocomplete="username"
-              required
-              bind:value={$form.userName}
-              class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="johndoe"
-            />
-          </div>
-          {#if getError('userName')}
-            <p class="mt-2 text-sm text-red-600" id="userName-error">
-              {getError('userName')}
-            </p>
-          {/if}
-        </div>
+        <FormField
+          name="userName"
+          label="Username"
+          type="text"
+          autocomplete="username"
+          required
+          bind:value={$form['userName']}
+          error={getError('userName')}
+        />
 
         <!-- Full Name -->
-        <div>
-          <label for="fullName" class="block text-sm font-medium text-gray-700">
-            Full Name
-          </label>
-          <div class="mt-1">
-            <input
-              id="fullName"
-              name="fullName"
-              type="text"
-              autocomplete="name"
-              required
-              bind:value={$form.fullName}
-              class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="John Doe"
-            />
-          </div>
-          {#if getError('fullName')}
-            <p class="mt-2 text-sm text-red-600" id="fullName-error">
-              {getError('fullName')}
-            </p>
-          {/if}
-        </div>
+        <FormField
+          name="fullName"
+          label="Full Name"
+          type="text"
+          autocomplete="name"
+          required
+          bind:value={$form['fullName']}
+          placeholder="John Doe"
+          error={getError('fullName')}
+        />
 
         <!-- Email -->
-        <div>
-          <label for="email" class="block text-sm font-medium text-gray-700">
-            Email address
-          </label>
-          <div class="mt-1">
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autocomplete="email"
-              required
-              bind:value={$form.email}
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              class:border-red-500={!!getError('email')}
-              aria-invalid={!!getError('email') ? 'true' : 'false'}
-              aria-describedby="email-error"
-            />
-          </div>
-          {#if getError('email')}
-            <p class="mt-2 text-sm text-red-600" id="email-error">
-              {getError('email')}
-            </p>
-          {/if}
-        </div>
+        <FormField
+          name="email"
+          label="Email address"
+          type="email"
+          autocomplete="email"
+          required
+          bind:value={$form['email']}
+          error={getError('email')}
+        />
 
         <!-- Password -->
-        <div>
-          <label for="password" class="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <div class="mt-1">
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="new-password"
-              required
-              bind:value={$form.password}
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              class:border-red-500={!!getError('password')}
-              aria-invalid={!!getError('password') ? 'true' : 'false'}
-              aria-describedby="password-error"
-            />
-          </div>
-          {#if getError('password')}
-            <p class="mt-2 text-sm text-red-600" id="password-error">
-              {getError('password')}
-            </p>
-          {/if}
-        </div>
+        <FormField
+          name="password"
+          label="Password"
+          type="password"
+          autocomplete="new-password"
+          required
+          bind:value={$form['password']}
+          error={getError('password')}
+        />
 
         <!-- Confirm Password -->
-        <div>
-          <label for="confirmPassword" class="block text-sm font-medium text-gray-700">
-            Confirm Password
-          </label>
-          <div class="mt-1">
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autocomplete="new-password"
-              required
-              bind:value={$form.confirmPassword}
-              class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              class:border-red-500={!!getError('confirmPassword')}
-              aria-invalid={!!getError('confirmPassword') ? 'true' : 'false'}
-              aria-describedby="confirm-password-error"
-            />
-          </div>
-          {#if getError('confirmPassword')}
-            <p class="mt-2 text-sm text-red-600" id="confirm-password-error">
-              {getError('confirmPassword')}
-            </p>
-          {/if}
-        </div>
+        <FormField
+          name="confirmPassword"
+          label="Confirm Password"
+          type="password"
+          autocomplete="new-password"
+          required
+          bind:value={$form['confirmPassword']}
+          error={getError('confirmPassword')}
+        />
+        
+        <!-- Accept Terms -->
+        <FormCheckbox
+          name="acceptTerms"
+          label="I accept the terms and conditions"
+          required
+          bind:checked={$form['acceptTerms']}
+          error={getError('acceptTerms')}
+        />
       </div>
 
       <div>
-        <button
-          type="submit"
-          class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          Sign up
-        </button>
+        <FormSubmit
+          label="Sign up"
+          loading={isLoading}
+          variant="primary"
+          size="md"
+        />
       </div>
 
       <div class="text-sm text-center">
         <p class="text-gray-600">
           Already have an account?{' '}
-          <a href="/auth/login" class="font-medium text-blue-600 hover:text-blue-500">
+          <a href="/auth/signin" class="font-medium text-indigo-600 hover:text-indigo-500">
             Sign in
           </a>
+        </p>
+      </div>
+      
+      <div class="text-sm text-center mt-6">
+        <div class="flex items-center justify-center space-x-2 mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <p class="text-gray-600 font-medium">
+            Protected by TravelerAIgent security
+          </p>
+        </div>
+        <p class="text-gray-500 text-xs">
+          Your connection is encrypted and your data is secure
         </p>
       </div>
     </form>
